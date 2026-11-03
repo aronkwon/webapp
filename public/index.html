@@ -154,6 +154,7 @@
     .spin { width: 22px; height: 22px; border: 3px solid var(--sub); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .padd { cursor: pointer; }
+    .padd[hidden] { display: none; }
     .prm { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; }
     .viewer { position: fixed; inset: 0; z-index: 2000; background: #000; display: flex; align-items: center; justify-content: center; touch-action: pan-y; }
     .vimg { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -339,6 +340,7 @@
   }
 
   // 글 하나에 붙는 사진 묶음 화면. 같은 글을 다시 그려도(투표 등) 올리는 중인 상태가 유지되도록 재사용
+  const MAX_PHOTOS = 10; // 글 하나당 사진 수 (서버 lib/photos.mjs의 MAX_PER_PARENT와 같게)
   const photoWidgets = new Map();
   let uploading = 0;
   function mountPhotos(slot, parent) {
@@ -359,7 +361,8 @@
     drawPhotos(w);
   }
   function drawPhotos(w) {
-    w.el.querySelector(".pc").textContent = w.photos.length ? w.photos.length : "";
+    w.el.querySelector(".pc").textContent = w.photos.length ? `${w.photos.length}/${MAX_PHOTOS}` : "";
+    w.el.querySelector(".padd").hidden = w.photos.length + w.pending >= MAX_PHOTOS;
     w.el.querySelector(".pgrid").innerHTML =
       w.photos.map((p, i) => `<button class="pthumb" data-i="${i}" aria-label="사진 크게 보기"><img loading="lazy" src="/api/photos/${p.id}/thumb" alt=""></button>`).join("") +
       `<div class="pthumb pending"><span class="spin"></span></div>`.repeat(w.pending);
@@ -367,6 +370,9 @@
   }
   async function addPhotos(w, files) {
     const st = w.el.querySelector(".pstatus");
+    const room = MAX_PHOTOS - w.photos.length - w.pending;
+    if (room <= 0) return toast(`사진은 글 하나에 ${MAX_PHOTOS}장까지예요`);
+    if (files.length > room) { toast(`${MAX_PHOTOS}장까지라서 ${room}장만 올릴게요`); files = files.slice(0, room); }
     w.pending += files.length; uploading += files.length; drawPhotos(w);
     let done = 0, failed = 0;
     for (const f of files) {
@@ -770,7 +776,10 @@
       });
     };
     if (!n) $("nFiles").onchange = (e) => {
-      for (const f of e.target.files) files.push({ file: f, url: URL.createObjectURL(f) });
+      const picked = [...e.target.files];
+      const room = MAX_PHOTOS - files.length;
+      if (picked.length > room) toast(room > 0 ? `${MAX_PHOTOS}장까지라서 ${room}장만 넣었어요` : `사진은 ${MAX_PHOTOS}장까지예요`);
+      for (const f of picked.slice(0, Math.max(room, 0))) files.push({ file: f, url: URL.createObjectURL(f) });
       e.target.value = ""; drawPrev();
     };
 

@@ -9,7 +9,7 @@ const PARENT_RE = /^(e|n)-([a-z0-9]{1,24})$/;
 const PARENT_PREFIX = { e: "events/", n: "notices/" };
 const MAX_FULL = 1.5 * 1024 * 1024;
 const MAX_THUMB = 200 * 1024;
-const MAX_PER_PARENT = 100;
+const MAX_PER_PARENT = 10;
 const TYPES = new Set(["image/webp", "image/jpeg", "image/png"]);
 
 export async function parentExists(parent) {
