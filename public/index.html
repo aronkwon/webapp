@@ -167,6 +167,35 @@
     .vnav.prev { left: 0; border-radius: 0 10px 10px 0; } .vnav.next { right: 0; border-radius: 10px 0 0 10px; }
     .vnav[hidden] { display: none; }
 
+    /* 회비 내역 */
+    .month-nav { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
+    .month-nav strong { font-size: 18px; }
+    .month-nav a { font-size: 28px; line-height: 1; padding: 4px 14px; color: var(--accent); }
+    .month-nav a.dim { color: var(--line); pointer-events: none; }
+    .ledger-sum .ls-label { font-size: 13px; color: var(--sub); }
+    .ledger-sum .ls-total { font-size: 30px; font-weight: 750; letter-spacing: -0.02em; margin: 2px 0 14px; }
+    .ls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+    .ls-grid div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .ls-grid span { font-size: 12px; color: var(--sub); }
+    .ls-grid b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .in { color: var(--ok); } .out { color: var(--danger); }
+    .ledger { margin-top: 6px; }
+    .day-head { font-size: 13px; font-weight: 600; color: var(--sub); margin: 18px 4px 6px; }
+    .led { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 6px; }
+    .led-ico { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+    .led-ico.in { background: var(--ok-soft); } .led-ico.out { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+    .led-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .led-memo { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .led-name { font-size: 13px; color: var(--sub); }
+    .led-amt { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--line); border-radius: 12px; padding: 4px; margin-bottom: 16px; }
+    .seg button { padding: 10px; border-radius: 9px; font-weight: 650; color: var(--sub); }
+    .seg button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .seg button.on[data-t="in"] { color: var(--ok); } .seg button.on[data-t="out"] { color: var(--danger); }
+    .amt-wrap { position: relative; }
+    .amt-wrap input { font-size: 22px; font-weight: 700; padding-right: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+    .amt-wrap span { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--sub); font-weight: 600; }
+
     /* 공지 */
     .snippet { font-size: 14px; color: var(--sub); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .nbody { margin-top: 14px; white-space: pre-wrap; word-break: break-word; line-height: 1.65; }
@@ -451,7 +480,7 @@
   const FEATURES = [
     { id: "schedule", icon: "🗓️", name: "일정", desc: "날짜 투표하고 모임 기록 남기기", ready: true },
     { id: "notice", icon: "📣", name: "공지", desc: "모임 소식과 안내 남기기", ready: true },
-    { id: "pay", icon: "💸", name: "정산", desc: "누가 얼마 냈는지 나누기", ready: false },
+    { id: "dues", icon: "💰", name: "회비 내역", desc: "월별 회비 입출금 관리", ready: true },
   ];
 
   async function viewHome() {
@@ -473,6 +502,10 @@
       <div class="tiles">${tiles}</div>`;
 
     // 타일에 요약 표시 (실패해도 기본 설명 유지)
+    api("/dues").then(({ entries }) => {
+      const el = $("sum-dues");
+      if (el && entries.length) el.innerHTML = `<b>잔액 ${won(sumOf(entries))}</b>`;
+    }).catch(() => {});
     api("/notices").then(({ notices }) => {
       const top = [...notices].sort((a, b) => (b.pinned - a.pinned) || b.createdAt.localeCompare(a.createdAt))[0];
       const el = $("sum-notice");
@@ -801,6 +834,126 @@
     };
   }
 
+  // ---------- 회비 내역 ----------
+  const won = (n) => `${n < 0 ? "-" : ""}${Math.abs(n).toLocaleString("ko-KR")}원`;
+  const signed = (e) => (e.type === "in" ? e.amount : -e.amount);
+  const sumOf = (list) => list.reduce((s, e) => s + signed(e), 0);
+  const thisMonth = () => todayStr().slice(0, 7);
+  const shiftMonth = (ym, d) => { const [y, m] = ym.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}`; };
+  const fmtMonth = (ym) => { const [y, m] = ym.split("-"); return `${y}년 ${Number(m)}월`; };
+
+  async function viewDues(ym) {
+    if (!/^\d{4}-\d{2}$/.test(ym || "")) ym = thisMonth();
+    setHeader("회비 내역", "#/"); setFab(`#/dues/new?m=${ym}`, "+ 내역 추가");
+    $("app").innerHTML = `<div style="height:12px"></div><div class="skeleton" style="height:150px"></div>` + `<div class="skeleton"></div>`.repeat(2);
+    const { entries } = await api("/dues");
+
+    const before = entries.filter((e) => e.date.slice(0, 7) < ym);
+    const inMonth = entries.filter((e) => e.date.slice(0, 7) === ym)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    const carry = sumOf(before);
+    const income = inMonth.filter((e) => e.type === "in").reduce((s, e) => s + e.amount, 0);
+    const spent = inMonth.filter((e) => e.type === "out").reduce((s, e) => s + e.amount, 0);
+    const end = carry + income - spent;
+    const isNow = ym === thisMonth();
+    const hasLater = entries.some((e) => e.date.slice(0, 7) > ym);
+
+    let rows = "", lastDate = "";
+    for (const e of inMonth) {
+      if (e.date !== lastDate) {
+        const d = toDate(e.date);
+        rows += `<div class="day-head">${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})</div>`;
+        lastDate = e.date;
+      }
+      rows += `<a class="led" href="#/dues/e/${e.id}">
+        <span class="led-ico ${e.type}">${e.type === "in" ? "입" : "출"}</span>
+        <span class="led-body"><span class="led-memo">${esc(e.memo)}</span>${e.name ? `<span class="led-name">${esc(e.name)}</span>` : ""}</span>
+        <span class="led-amt ${e.type}">${e.type === "in" ? "+" : "-"}${e.amount.toLocaleString("ko-KR")}</span>
+      </a>`;
+    }
+
+    $("app").innerHTML = `
+      <div class="month-nav">
+        <a href="#/dues/${shiftMonth(ym, -1)}" aria-label="이전 달">‹</a>
+        <strong>${fmtMonth(ym)}</strong>
+        <a href="#/dues/${shiftMonth(ym, 1)}" aria-label="다음 달" ${isNow && !hasLater ? 'class="dim"' : ""}>›</a>
+      </div>
+      <div class="hero ledger-sum">
+        <div class="ls-label">${isNow ? "현재 잔액" : "월말 잔액"}</div>
+        <div class="ls-total">${won(end)}</div>
+        <div class="ls-grid">
+          <div><span>지난달에서</span><b>${won(carry)}</b></div>
+          <div><span>들어온 돈</span><b class="in">+${income.toLocaleString("ko-KR")}</b></div>
+          <div><span>나간 돈</span><b class="out">-${spent.toLocaleString("ko-KR")}</b></div>
+        </div>
+      </div>
+      ${inMonth.length ? `<div class="ledger">${rows}</div>`
+        : `<div class="empty" style="padding:40px 16px"><b>💰</b>${fmtMonth(ym)}에는 내역이 없어요.${entries.length ? "" : "<br>처음이라면 지금 있는 회비를 <strong>입금</strong>으로 먼저 적어두세요."}</div>`}
+      ${!isNow ? `<p style="text-align:center;margin-top:16px"><a class="link" href="#/dues">이번 달로</a></p>` : ""}`;
+  }
+
+  async function viewDuesForm(id, ym) {
+    setFab(false);
+    let e = null;
+    if (id) { e = (await api("/dues/" + id)).entry; setHeader("내역 수정", `#/dues/${e.date.slice(0, 7)}`); }
+    else setHeader("내역 추가", `#/dues/${ym || ""}`);
+    // 지난 달 화면에서 추가하면 그 달 마지막 날로 기본값
+    let defDate = todayStr();
+    if (!e && ym && /^\d{4}-\d{2}$/.test(ym) && ym !== thisMonth()) {
+      const [y, m] = ym.split("-").map(Number);
+      defDate = `${ym}-${pad(new Date(y, m, 0).getDate())}`;
+    }
+    let type = e?.type || "in";
+    $("app").innerHTML = `
+      <div style="height:8px"></div>
+      <div class="seg" role="tablist">
+        <button data-t="in" class="${type === "in" ? "on" : ""}">입금</button>
+        <button data-t="out" class="${type === "out" ? "on" : ""}">출금</button>
+      </div>
+      <label class="field"><span>금액</span>
+        <div class="amt-wrap"><input type="text" id="dAmt" inputmode="numeric" autocomplete="off" placeholder="0" value="${e ? e.amount.toLocaleString("ko-KR") : ""}"><span>원</span></div>
+      </label>
+      <label class="field"><span>내용</span><input type="text" id="dMemo" maxlength="100" placeholder="" value="${esc(e?.memo)}"></label>
+      <label class="field"><span id="dNameLabel"></span><input type="text" id="dName" maxlength="20" value="${esc(e?.name)}"></label>
+      <label class="field"><span>날짜</span><input type="date" id="dDate" value="${esc(e?.date || defDate)}"></label>
+      <button class="btn btn-primary" id="dSave">${e ? "저장" : "추가"}</button>
+      ${e ? `<button class="btn btn-danger" id="dDel">내역 삭제</button>
+        <p class="hint" style="text-align:center">${e.by ? `${esc(e.by)}님이 적음 · ` : ""}${fmtWhen(e.createdAt)}</p>` : ""}`;
+
+    const applyType = () => {
+      document.querySelectorAll(".seg button").forEach((b) => b.classList.toggle("on", b.dataset.t === type));
+      $("dMemo").placeholder = type === "in" ? "예: 11월 회비" : "예: 송년회 식비";
+      $("dNameLabel").textContent = type === "in" ? "낸 사람 (선택)" : "쓴 사람 (선택)";
+      $("dName").placeholder = type === "in" ? "예: 철수" : "예: 총무";
+    };
+    document.querySelectorAll(".seg button").forEach((b) => b.onclick = () => { type = b.dataset.t; applyType(); });
+    applyType();
+    // 금액은 숫자만, 세 자리마다 쉼표
+    $("dAmt").oninput = () => {
+      const n = $("dAmt").value.replace(/\D/g, "").slice(0, 9);
+      $("dAmt").value = n ? Number(n).toLocaleString("ko-KR") : "";
+    };
+    if (!e) $("dAmt").focus();
+
+    $("dSave").onclick = async () => {
+      const amount = Number($("dAmt").value.replace(/\D/g, ""));
+      const memo = $("dMemo").value.trim();
+      if (!amount) return toast("금액을 입력해 주세요");
+      if (!memo) return toast("내용을 입력해 주세요");
+      $("dSave").disabled = true;
+      const body = { type, amount, memo, name: $("dName").value, date: $("dDate").value };
+      try {
+        const r = e ? await api(`/dues/${e.id}`, "PATCH", body) : await api("/dues", "POST", { ...body, by: me });
+        location.replace(`#/dues/${r.entry.date.slice(0, 7)}`);
+      } catch (err) { toast(err.message); $("dSave").disabled = false; }
+    };
+    if ($("dDel")) $("dDel").onclick = async () => {
+      if (!confirm("이 내역을 삭제할까요?")) return;
+      await api(`/dues/${e.id}`, "DELETE").catch((err) => toast(err.message));
+      location.replace(`#/dues/${e.date.slice(0, 7)}`);
+    };
+  }
+
   // ---------- 라우팅 ----------
   async function route(keepScroll) {
     if (!me) return askName();
@@ -822,6 +975,12 @@
         else if (s[0] === "n" && s[1]) await viewNotice(s[1]);
         else await viewNotices();
       }
+      else if (p[0] === "dues") {
+        const s = p.slice(1); // #/dues, #/dues/2026-11, #/dues/new?m=2026-11, #/dues/e/ID
+        if (s[0] && s[0].startsWith("new")) await viewDuesForm(null, new URLSearchParams(s[0].split("?")[1] || "").get("m"));
+        else if (s[0] === "e" && s[1]) await viewDuesForm(s[1]);
+        else await viewDues(s[0]);
+      }
       // 예전 주소(#/e/ID)로 공유된 링크도 열리도록
       else if (p[0] === "e" && p[1]) location.replace(`#/schedule/e/${p[1]}`);
       else await viewHome();
@@ -833,7 +992,7 @@
   window.addEventListener("hashchange", () => route());
   // 다른 앱 갔다 오면 최신 투표로 새로고침 (작성 중인 화면·저장 안 한 기록은 건드리지 않음)
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible" || !me || /new|edit/.test(location.hash)) return;
+    if (document.visibilityState !== "visible" || !me || /new|edit|dues\/e\//.test(location.hash)) return;
     if (uploading || document.querySelector(".viewer")) return; // 사진 올리는 중·크게 보는 중엔 그대로
     const rec = $("record");
     if (rec && rec.value !== rec.defaultValue) return;

@@ -2,12 +2,14 @@
 //   /api/events...   일정 (lib/events.mjs)
 //   /api/notices...  공지 (lib/notices.mjs)
 //   /api/photos...   사진 (lib/photos.mjs)
+//   /api/dues...     회비 내역 (lib/dues.mjs)
 import { fail } from "../lib/http.mjs";
 import { handleEvents } from "../lib/events.mjs";
 import { handleNotices } from "../lib/notices.mjs";
 import { handlePhotos } from "../lib/photos.mjs";
+import { handleDues } from "../lib/dues.mjs";
 
-const JSON_ROUTES = { events: handleEvents, notices: handleNotices };
+const JSON_ROUTES = { events: handleEvents, notices: handleNotices, dues: handleDues };
 
 export default async (req) => {
   const parts = new URL(req.url).pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
