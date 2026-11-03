@@ -3,6 +3,21 @@
 //   events/{id}            일정 1건 (JSON)
 //   votes/{id}/{이름}      한 사람의 투표 (JSON) — 사람마다 키를 나눠서 동시 투표해도 덮어쓰지 않음
 import { getStore } from "@netlify/blobs";
+import { resolveNaverPlace } from "../lib/naver-place.mjs";
+
+// 장소 링크 반영: 링크가 바뀌었을 때만 좌표를 다시 찾음
+async function applyPlaceLink(ev, raw) {
+  const input = String(raw ?? "").trim().slice(0, 1000);
+  if (!input) { ev.placeUrl = ""; ev.placeLat = null; ev.placeLng = null; return null; }
+  const r = await resolveNaverPlace(input);
+  if (!r) return "네이버 지도 링크(naver.me 또는 map.naver.com)만 넣을 수 있어요";
+  if (r.url === ev.placeUrl && ev.placeLat != null) return null;
+  ev.placeUrl = r.url;
+  ev.placeLat = r.lat ?? null;
+  ev.placeLng = r.lng ?? null;
+  if (!ev.place && r.name) ev.place = r.name.slice(0, 120);
+  return null;
+}
 
 const store = () => getStore({ name: "moim", consistency: "strong" });
 
@@ -75,6 +90,9 @@ export default async (req) => {
         id: newEventId(),
         title,
         place: clean(body.place, 120),
+        placeUrl: "",
+        placeLat: null,
+        placeLng: null,
         candidates,
         decidedId: null,
         record: "",
@@ -82,6 +100,10 @@ export default async (req) => {
         createdAt: now,
         updatedAt: now,
       };
+      if ("placeUrl" in body) {
+        const err = await applyPlaceLink(ev, body.placeUrl);
+        if (err) return fail(err);
+      }
       await s.setJSON(`events/${ev.id}`, ev);
       return json({ event: ev }, 201);
     }
@@ -116,6 +138,10 @@ export default async (req) => {
       ev.title = t;
     }
     if ("place" in body) ev.place = clean(body.place, 120);
+    if ("placeUrl" in body) {
+      const err = await applyPlaceLink(ev, body.placeUrl);
+      if (err) return fail(err);
+    }
     if ("record" in body) ev.record = clean(body.record, 5000);
     if ("candidates" in body) {
       const c = parseCandidates(body.candidates);

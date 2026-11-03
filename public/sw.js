@@ -1,5 +1,5 @@
 // 버전을 올리면 새 캐시로 교체됨
-const CACHE = 'moim-v4';
+const CACHE = 'moim-v5';
 const ASSETS = ['./', 'index.html', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -20,7 +20,10 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   // API는 항상 서버에서 (투표 결과가 캐시에 묶이지 않도록)
-  if (new URL(e.request.url).pathname.startsWith('/api/')) return;
+  const url = new URL(e.request.url);
+  if (url.pathname.startsWith('/api/')) return;
+  // 지도 타일·외부 라이브러리는 브라우저에 맡김 (캐시가 불어나지 않도록)
+  if (url.origin !== self.location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

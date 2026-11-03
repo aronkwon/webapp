@@ -79,6 +79,11 @@
     .hero .when { font-size: 20px; font-weight: 700; color: var(--accent); margin: 10px 0 2px; }
     .place-link { display: inline-flex; gap: 4px; color: var(--sub); font-size: 15px; }
     .place-link:hover { text-decoration: underline; }
+    .mapbox { position: relative; height: 160px; margin-top: 12px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--line); }
+    #map { position: absolute; inset: 0; z-index: 0; }
+    .map-open { position: absolute; inset: 0; z-index: 1000; display: flex; align-items: flex-end; justify-content: flex-start; padding: 8px; }
+    .map-open span { font-size: 12px; font-weight: 600; background: var(--card); color: var(--text); padding: 4px 10px; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+    .pin { width: 28px; height: 28px; background: var(--accent); border: 3px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 2px 6px rgba(0,0,0,.35); }
     .row-actions { display: flex; gap: 14px; margin-top: 12px; font-size: 14px; color: var(--sub); }
     .row-actions button, .row-actions a { color: var(--sub); text-decoration: underline; text-underline-offset: 3px; padding: 0; }
 
@@ -195,6 +200,38 @@
   const dday = (dateStr) => Math.round((toDate(dateStr) - toDate(todayStr())) / 86400000);
   const decidedOf = (ev) => ev.candidates.find((c) => c.id === ev.decidedId);
   const mapUrl = (place) => "https://map.naver.com/p/search/" + encodeURIComponent(place);
+
+  // ---------- 지도 미리보기 (Leaflet + OpenStreetMap, 키 필요 없음) ----------
+  let leafletP;
+  function loadLeaflet() {
+    return (leafletP ||= new Promise((res, rej) => {
+      const css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
+      document.head.appendChild(css);
+      const js = document.createElement("script");
+      js.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+      js.onload = () => res(window.L);
+      js.onerror = () => { leafletP = null; rej(new Error("지도를 불러오지 못했어요")); };
+      document.head.appendChild(js);
+    }));
+  }
+  async function drawMap(el, lat, lng) {
+    try {
+      const L = await loadLeaflet();
+      if (!el.isConnected) return;
+      const m = L.map(el, {
+        zoomControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false,
+        doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false,
+      }).setView([lat, lng], 16);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, attribution: "© OpenStreetMap",
+      }).addTo(m);
+      L.marker([lat, lng], {
+        icon: L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [28, 28], iconAnchor: [14, 28] }),
+      }).addTo(m);
+    } catch { el.closest(".mapbox")?.remove(); }
+  }
 
   // ---------- 화면 틀 ----------
   function setHeader(title, back) {
@@ -330,9 +367,15 @@
     const max = Math.max(0, ...Object.values(count));
     const mine = new Set(votes.find((v) => v.name === me)?.choices || []);
     const dec = decidedOf(ev);
-    const place = ev.place
-      ? `<a class="place-link" href="${mapUrl(ev.place)}" target="_blank" rel="noopener">📍 ${esc(ev.place)}</a>`
-      : `<span class="place-link">📍 장소 미정</span>`;
+    const placeHref = ev.placeUrl || (ev.place ? mapUrl(ev.place) : "");
+    const hasMap = ev.placeLat != null && ev.placeLng != null;
+    const place = (placeHref
+        ? `<a class="place-link" href="${esc(placeHref)}" target="_blank" rel="noopener">📍 ${esc(ev.place || "네이버 지도에서 보기")}</a>`
+        : `<span class="place-link">📍 장소 미정</span>`)
+      + (hasMap
+        ? `<div class="mapbox"><div id="map"></div>
+             <a class="map-open" href="${esc(placeHref)}" target="_blank" rel="noopener"><span>네이버 지도에서 열기 ›</span></a></div>`
+        : "");
 
     let html = "";
     if (dec) {
@@ -378,6 +421,7 @@
     }
     setHeader(dec ? "일정" : "일정 투표", "#/schedule");
     $("app").innerHTML = html;
+    if (hasMap) drawMap($("map"), ev.placeLat, ev.placeLng);
 
     // 이벤트 연결
     document.querySelectorAll("[data-vote]").forEach((b) => b.onclick = async () => {
@@ -420,6 +464,10 @@
       <div style="height:8px"></div>
       <label class="field"><span>모임 이름</span><input type="text" id="fTitle" maxlength="80" placeholder="예: 11월 정기모임" value="${esc(ev?.title)}"></label>
       <label class="field"><span>장소</span><input type="text" id="fPlace" maxlength="120" placeholder="예: 강남역 11번 출구 (나중에 정해도 돼요)" value="${esc(ev?.place)}"></label>
+      <label class="field"><span>네이버 지도 링크</span>
+        <input type="text" id="fPlaceUrl" inputmode="url" autocomplete="off" placeholder="https://naver.me/…" value="${esc(ev?.placeUrl)}">
+        <p class="hint">네이버 지도에서 장소 → 공유 → 링크 복사 후 붙여넣으세요. 공유 문구를 통째로 붙여넣어도 되고, 장소 이름이 비어 있으면 자동으로 채워져요.</p>
+      </label>
       <div class="field"><span style="display:block;font-size:14px;font-weight:600;margin:0 2px 6px">후보 날짜</span>
         <div id="cands"></div>
         <button class="btn btn-ghost" id="addCand">+ 후보 추가</button>
@@ -451,7 +499,7 @@
       if (!candidates.length) return toast("후보 날짜를 하나 이상 골라주세요");
       $("fSave").disabled = true;
       try {
-        const body = { title, place: $("fPlace").value, candidates };
+        const body = { title, place: $("fPlace").value, placeUrl: $("fPlaceUrl").value, candidates };
         const r = ev ? await api(`/events/${ev.id}`, "PATCH", body) : await api("/events", "POST", { ...body, by: me });
         location.replace(`#/schedule/e/${r.event.id}`);
       } catch (e) { toast(e.message); $("fSave").disabled = false; }
