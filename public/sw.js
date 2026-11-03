@@ -1,5 +1,5 @@
 // 버전을 올리면 새 캐시로 교체됨
-const CACHE = 'moim-v2';
+const CACHE = 'moim-v3';
 const ASSETS = ['./', 'index.html', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -19,6 +19,8 @@ self.addEventListener('activate', (e) => {
 // 네트워크 우선, 실패하면 캐시 (개발 중 수정사항이 바로 보이도록)
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // API는 항상 서버에서 (투표 결과가 캐시에 묶이지 않도록)
+  if (new URL(e.request.url).pathname.startsWith('/api/')) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

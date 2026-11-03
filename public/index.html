@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>모임</title>
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="모임">
+  <style>
+    :root {
+      --bg: #f4f4f7; --card: #fff; --text: #17171c; --sub: #6b6b78; --line: #e6e6ec;
+      --accent: #4f46e5; --accent-soft: #eceafd; --ok: #0f9d58; --ok-soft: #e3f5ea; --warn: #c2410c; --danger: #d92d20;
+      --radius: 14px;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101014; --card: #1b1b22; --text: #f1f1f4; --sub: #9a9aa8; --line: #2c2c36;
+        --accent: #8b85ff; --accent-soft: #26244a; --ok: #4ade80; --ok-soft: #173325; --warn: #fb923c; --danger: #f87171;
+        color-scheme: dark;
+      }
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Pretendard", sans-serif;
+      padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+    input, textarea { font: inherit; color: var(--text); }
+
+    header {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; gap: 8px;
+      padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
+    header h1 { font-size: 22px; margin: 0; flex: 1; letter-spacing: -0.02em; }
+    header .back { font-size: 22px; padding: 4px 8px 4px 0; }
+    .me-chip { font-size: 14px; padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
+
+    main { max-width: 560px; margin: 0 auto; padding: 4px 16px 16px; }
+    .section-title { font-size: 13px; font-weight: 600; color: var(--sub); margin: 20px 4px 8px; }
+
+    .card {
+      display: block; background: var(--card); border-radius: var(--radius);
+      padding: 14px 16px; margin-bottom: 10px; border: 1px solid var(--line);
+    }
+    .card-top { display: flex; align-items: center; gap: 8px; }
+    .card-title { font-weight: 650; font-size: 17px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta { color: var(--sub); font-size: 14px; margin-top: 4px; }
+    .meta span + span::before { content: "·"; margin: 0 6px; }
+    .past { opacity: .78; }
+
+    .badge { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+    .b-vote { background: var(--accent-soft); color: var(--accent); }
+    .b-dday { background: var(--ok-soft); color: var(--ok); }
+    .b-todo { background: transparent; color: var(--warn); border: 1px solid currentColor; }
+    .b-done { background: var(--line); color: var(--sub); }
+
+    .fab {
+      position: fixed; right: 16px; bottom: calc(20px + env(safe-area-inset-bottom));
+      background: var(--accent); color: #fff; font-weight: 650;
+      padding: 14px 20px; border-radius: 999px; box-shadow: 0 6px 20px rgba(79,70,229,.35);
+    }
+
+    .empty { text-align: center; color: var(--sub); padding: 60px 16px; }
+    .empty b { display: block; font-size: 40px; margin-bottom: 8px; }
+
+    /* 상세 */
+    .hero { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 16px; }
+    .hero h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.02em; }
+    .hero .when { font-size: 20px; font-weight: 700; color: var(--accent); margin: 10px 0 2px; }
+    .place-link { display: inline-flex; gap: 4px; color: var(--sub); font-size: 15px; }
+    .place-link:hover { text-decoration: underline; }
+    .row-actions { display: flex; gap: 14px; margin-top: 12px; font-size: 14px; color: var(--sub); }
+    .row-actions button, .row-actions a { color: var(--sub); text-decoration: underline; text-underline-offset: 3px; padding: 0; }
+
+    .cand { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start; }
+    .cand.top { border-color: var(--accent); }
+    .tick {
+      flex: none; width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--line);
+      display: grid; place-items: center; font-size: 20px; font-weight: 700; color: transparent;
+    }
+    .tick.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .cand-body { flex: 1; min-width: 0; }
+    .cand-date { font-weight: 650; }
+    .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0 6px; overflow: hidden; }
+    .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+    .names { font-size: 13px; color: var(--sub); }
+    .decide-btn { flex: none; font-size: 13px; font-weight: 600; color: var(--accent); padding: 6px 10px; border: 1px solid var(--accent); border-radius: 999px; align-self: center; }
+
+    textarea, input[type=text], input[type=date], input[type=time] {
+      width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px 14px; outline: none; min-height: 48px;
+    }
+    textarea { min-height: 140px; resize: vertical; }
+    textarea:focus, input:focus { border-color: var(--accent); }
+    label.field { display: block; margin-bottom: 16px; }
+    label.field > span { display: block; font-size: 14px; font-weight: 600; margin: 0 2px 6px; }
+    .hint { font-size: 13px; color: var(--sub); margin: 4px 2px 0; }
+    .cand-edit { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .cand-edit input[type=date] { flex: 1.4; }
+    .cand-edit input[type=time] { flex: 1; }
+    .cand-edit .x { flex: none; width: 40px; height: 48px; font-size: 20px; color: var(--sub); }
+
+    .btn { display: block; width: 100%; padding: 14px; border-radius: 12px; font-weight: 650; text-align: center; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { border: 1px dashed var(--line); color: var(--sub); }
+    .btn-danger { color: var(--danger); margin-top: 28px; }
+    .btn:disabled { opacity: .5; }
+    .saved { font-size: 13px; color: var(--ok); margin-left: 8px; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+      background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px;
+      opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px);
+    }
+    .toast.show { opacity: 1; }
+    .skeleton { height: 76px; border-radius: var(--radius); background: var(--card); margin-bottom: 10px; opacity: .6; }
+  </style>
+</head>
+<body>
+  <header id="hdr"></header>
+  <main id="app"></main>
+  <div id="fab"></div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+  // ---------- 공통 ----------
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+  let me = store.get("moim.name") || "";
+
+  async function api(path, method = "GET", body) {
+    const r = await fetch("/api" + path, {
+      method,
+      headers: body ? { "content-type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "서버 오류가 났어요");
+    return d;
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  // ---------- 날짜 ----------
+  const WD = ["일", "월", "화", "수", "목", "금", "토"];
+  const pad = (n) => String(n).padStart(2, "0");
+  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const toDate = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  function fmtCand(c, withYear) {
+    const d = toDate(c.date);
+    const y = withYear || d.getFullYear() !== new Date().getFullYear() ? `${d.getFullYear()}년 ` : "";
+    let s = `${y}${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`;
+    if (c.time) {
+      const [h, mi] = c.time.split(":").map(Number);
+      s += ` ${h < 12 ? "오전" : "오후"} ${h % 12 || 12}시${mi ? ` ${mi}분` : ""}`;
+    }
+    return s;
+  }
+  const sortKey = (c) => c.date + "T" + (c.time || "00:00");
+  const dday = (dateStr) => Math.round((toDate(dateStr) - toDate(todayStr())) / 86400000);
+  const decidedOf = (ev) => ev.candidates.find((c) => c.id === ev.decidedId);
+  const mapUrl = (place) => "https://map.naver.com/p/search/" + encodeURIComponent(place);
+
+  // ---------- 화면 틀 ----------
+  function setHeader(title, back) {
+    $("hdr").innerHTML = `
+      ${back ? `<a class="back" href="${back}" aria-label="뒤로">‹</a>` : ""}
+      <h1>${esc(title)}</h1>
+      ${me ? `<button class="me-chip" id="meBtn">${esc(me)} ✎</button>` : ""}`;
+    const b = $("meBtn"); if (b) b.onclick = askName;
+  }
+  function setFab(show) {
+    $("fab").innerHTML = show ? `<a class="fab" href="#/new">+ 새 일정</a>` : "";
+  }
+
+  function askName() {
+    setHeader("모임"); setFab(false);
+    $("app").innerHTML = `
+      <div style="padding-top:40px">
+        <h2 style="margin:0 0 6px">이름을 알려주세요</h2>
+        <p class="hint" style="margin-bottom:20px">투표할 때 친구들에게 보이는 이름이에요.</p>
+        <label class="field"><input type="text" id="nameIn" maxlength="20" placeholder="예: 권" value="${esc(me)}" autocomplete="nickname"></label>
+        <button class="btn btn-primary" id="nameOk">시작하기</button>
+      </div>`;
+    const go = () => {
+      const v = $("nameIn").value.trim();
+      if (!v) return toast("이름을 입력해 주세요");
+      me = v; store.set("moim.name", v); route();
+    };
+    $("nameOk").onclick = go;
+    $("nameIn").onkeydown = (e) => { if (e.key === "Enter") go(); };
+    $("nameIn").focus();
+  }
+
+  // ---------- 목록 ----------
+  async function viewList() {
+    setHeader("모임"); setFab(true);
+    $("app").innerHTML = `<div style="height:12px"></div>` + `<div class="skeleton"></div>`.repeat(3);
+    const { events } = await api("/events");
+    if (!events.length) {
+      $("app").innerHTML = `<div class="empty"><b>🗓️</b>아직 일정이 없어요.<br>아래 <strong>+ 새 일정</strong>으로 첫 모임을 잡아보세요.</div>`;
+      return;
+    }
+    const voting = events.filter((e) => !e.decidedId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const decided = events.filter((e) => e.decidedId)
+      .sort((a, b) => sortKey(decidedOf(b)).localeCompare(sortKey(decidedOf(a))));
+
+    let html = "";
+    if (voting.length) {
+      html += `<div class="section-title">투표 중</div>`;
+      for (const e of voting) {
+        html += `<a class="card" href="#/e/${e.id}">
+          <div class="card-top"><div class="card-title">${esc(e.title)}</div><span class="badge b-vote">${e.voterCount}명 투표</span></div>
+          <div class="meta"><span>후보 ${e.candidates.length}개</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}</div>
+        </a>`;
+      }
+    }
+    // 확정된 일정: 최근(날짜가 늦은) 순, 월별로 묶기
+    let lastMonth = "";
+    for (const e of decided) {
+      const c = decidedOf(e);
+      const month = c.date.slice(0, 7);
+      if (month !== lastMonth) {
+        const [y, m] = month.split("-");
+        html += `<div class="section-title">${y}년 ${Number(m)}월</div>`;
+        lastMonth = month;
+      }
+      const dd = dday(c.date);
+      const badge = dd > 0 ? `<span class="badge b-dday">D-${dd}</span>`
+        : dd === 0 ? `<span class="badge b-dday">오늘</span>`
+        : e.record ? `<span class="badge b-done">기록 있음</span>`
+        : `<span class="badge b-todo">기록 남기기</span>`;
+      html += `<a class="card ${dd < 0 ? "past" : ""}" href="#/e/${e.id}">
+        <div class="card-top"><div class="card-title">${esc(e.title)}</div>${badge}</div>
+        <div class="meta"><span>${fmtCand(c)}</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}</div>
+      </a>`;
+    }
+    $("app").innerHTML = html;
+  }
+
+  // ---------- 상세 ----------
+  async function viewDetail(id) {
+    setHeader("", "#/"); setFab(false);
+    $("app").innerHTML = `<div style="height:12px"></div><div class="skeleton" style="height:140px"></div>`;
+    const { event, votes } = await api("/events/" + id);
+    renderDetail(event, votes);
+  }
+
+  function renderDetail(ev, votes) {
+    const count = {}, who = {};
+    for (const v of votes) for (const c of v.choices) { count[c] = (count[c] || 0) + 1; (who[c] ||= []).push(v.name); }
+    const max = Math.max(0, ...Object.values(count));
+    const mine = new Set(votes.find((v) => v.name === me)?.choices || []);
+    const dec = decidedOf(ev);
+    const place = ev.place
+      ? `<a class="place-link" href="${mapUrl(ev.place)}" target="_blank" rel="noopener">📍 ${esc(ev.place)}</a>`
+      : `<span class="place-link">📍 장소 미정</span>`;
+
+    let html = "";
+    if (dec) {
+      const dd = dday(dec.date);
+      html += `<div class="hero" style="margin-top:8px">
+        <h2>${esc(ev.title)}</h2>
+        <div class="when">${fmtCand(dec, true)}</div>
+        ${place}
+        <div class="meta" style="margin-top:6px">${dd > 0 ? `D-${dd}` : dd === 0 ? "오늘이에요!" : `${-dd}일 전`}${who[dec.id] ? ` · 가능: ${who[dec.id].map(esc).join(", ")}` : ""}</div>
+        <div class="row-actions">
+          <a href="#/e/${ev.id}/edit">수정</a>
+          <button id="reopen">투표 다시 열기</button>
+        </div>
+      </div>
+      <div class="section-title">모임 기록</div>
+      <textarea id="record" placeholder="${dd > 0 ? "모임이 끝나면 어땠는지 남겨보세요" : "누가 왔는지, 뭘 먹었는지, 다음엔 뭘 할지…"}">${esc(ev.record)}</textarea>
+      <div style="display:flex;align-items:center;margin-top:10px">
+        <button class="btn btn-primary" id="saveRec" style="width:auto;padding:10px 20px">기록 저장</button>
+        <span class="saved" id="recSaved"></span>
+      </div>`;
+    } else {
+      html += `<div class="hero" style="margin-top:8px">
+        <h2>${esc(ev.title)}</h2>
+        ${place}
+        <div class="meta" style="margin-top:6px">${votes.length}명 투표${ev.createdBy ? ` · ${esc(ev.createdBy)}님이 만듦` : ""}</div>
+        <div class="row-actions"><a href="#/e/${ev.id}/edit">수정</a></div>
+      </div>
+      <div class="section-title">가능한 날을 모두 눌러주세요</div>`;
+      const cands = [...ev.candidates].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+      for (const c of cands) {
+        const n = count[c.id] || 0;
+        const pct = votes.length ? Math.round((n / votes.length) * 100) : 0;
+        html += `<div class="cand ${n && n === max ? "top" : ""}">
+          <button class="tick ${mine.has(c.id) ? "on" : ""}" data-vote="${c.id}" aria-label="가능">✓</button>
+          <div class="cand-body">
+            <div class="cand-date">${fmtCand(c)}</div>
+            <div class="bar"><i style="width:${pct}%"></i></div>
+            <div class="names">${n}명${n ? ` · ${who[c.id].map(esc).join(", ")}` : ""}</div>
+          </div>
+          <button class="decide-btn" data-decide="${c.id}">확정</button>
+        </div>`;
+      }
+    }
+    setHeader(dec ? "일정" : "일정 투표", "#/");
+    $("app").innerHTML = html;
+
+    // 이벤트 연결
+    document.querySelectorAll("[data-vote]").forEach((b) => b.onclick = async () => {
+      const cid = b.dataset.vote;
+      mine.has(cid) ? mine.delete(cid) : mine.add(cid);
+      b.classList.toggle("on");
+      try {
+        const r = await api(`/events/${ev.id}/votes`, "PUT", { name: me, choices: [...mine] });
+        renderDetail(ev, r.votes);
+      } catch (e) { toast(e.message); viewDetail(ev.id); }
+    });
+    document.querySelectorAll("[data-decide]").forEach((b) => b.onclick = async () => {
+      const c = ev.candidates.find((x) => x.id === b.dataset.decide);
+      if (!confirm(`${fmtCand(c)}(으)로 확정할까요?`)) return;
+      const r = await api(`/events/${ev.id}`, "PATCH", { decidedId: c.id }).catch((e) => toast(e.message));
+      if (r) { toast("일정을 확정했어요"); renderDetail(r.event, r.votes); }
+    });
+    if ($("reopen")) $("reopen").onclick = async () => {
+      if (!confirm("확정을 취소하고 다시 투표할까요?")) return;
+      const r = await api(`/events/${ev.id}`, "PATCH", { decidedId: null }).catch((e) => toast(e.message));
+      if (r) renderDetail(r.event, r.votes);
+    };
+    if ($("saveRec")) $("saveRec").onclick = async () => {
+      $("saveRec").disabled = true;
+      const r = await api(`/events/${ev.id}`, "PATCH", { record: $("record").value }).catch((e) => toast(e.message));
+      $("saveRec").disabled = false;
+      if (r) { ev.record = r.event.record; $("recSaved").textContent = "저장됨 ✓"; }
+    };
+  }
+
+  // ---------- 생성 / 수정 ----------
+  async function viewForm(id) {
+    setFab(false);
+    let ev = null;
+    if (id) { setHeader("일정 수정", `#/e/${id}`); ev = (await api("/events/" + id)).event; }
+    else setHeader("새 일정", "#/");
+
+    const rows = ev ? ev.candidates.map((c) => ({ ...c })) : [{ date: "", time: "" }];
+    $("app").innerHTML = `
+      <div style="height:8px"></div>
+      <label class="field"><span>모임 이름</span><input type="text" id="fTitle" maxlength="80" placeholder="예: 11월 정기모임" value="${esc(ev?.title)}"></label>
+      <label class="field"><span>장소</span><input type="text" id="fPlace" maxlength="120" placeholder="예: 강남역 11번 출구 (나중에 정해도 돼요)" value="${esc(ev?.place)}"></label>
+      <div class="field"><span style="display:block;font-size:14px;font-weight:600;margin:0 2px 6px">후보 날짜</span>
+        <div id="cands"></div>
+        <button class="btn btn-ghost" id="addCand">+ 후보 추가</button>
+        <p class="hint">시간은 비워둬도 돼요. 친구들이 가능한 날에 투표하고, 정해지면 확정하면 됩니다.</p>
+      </div>
+      <button class="btn btn-primary" id="fSave">${ev ? "저장" : "만들기"}</button>
+      ${ev ? `<button class="btn btn-danger" id="fDel">일정 삭제</button>` : ""}`;
+
+    const draw = () => {
+      $("cands").innerHTML = rows.map((c, i) => `
+        <div class="cand-edit">
+          <input type="date" data-i="${i}" data-k="date" value="${esc(c.date)}" aria-label="날짜">
+          <input type="time" data-i="${i}" data-k="time" value="${esc(c.time)}" aria-label="시간" step="1800">
+          <button class="x" data-del="${i}" aria-label="삭제" ${rows.length < 2 ? "disabled style=opacity:.3" : ""}>×</button>
+        </div>`).join("");
+      $("cands").querySelectorAll("input").forEach((inp) => inp.oninput = () => { rows[inp.dataset.i][inp.dataset.k] = inp.value; });
+      $("cands").querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { rows.splice(+b.dataset.del, 1); draw(); });
+    };
+    draw();
+    $("addCand").onclick = () => {
+      const last = rows[rows.length - 1];
+      rows.push({ date: "", time: last?.time || "" });
+      draw();
+    };
+    $("fSave").onclick = async () => {
+      const title = $("fTitle").value.trim();
+      const candidates = rows.filter((c) => c.date).map((c) => ({ id: c.id, date: c.date, time: c.time || "" }));
+      if (!title) return toast("모임 이름을 입력해 주세요");
+      if (!candidates.length) return toast("후보 날짜를 하나 이상 골라주세요");
+      $("fSave").disabled = true;
+      try {
+        const body = { title, place: $("fPlace").value, candidates };
+        const r = ev ? await api(`/events/${ev.id}`, "PATCH", body) : await api("/events", "POST", { ...body, by: me });
+        location.replace(`#/e/${r.event.id}`);
+      } catch (e) { toast(e.message); $("fSave").disabled = false; }
+    };
+    if ($("fDel")) $("fDel").onclick = async () => {
+      if (!confirm("이 일정과 투표, 기록이 모두 지워져요. 삭제할까요?")) return;
+      await api(`/events/${ev.id}`, "DELETE").catch((e) => toast(e.message));
+      location.replace("#/");
+    };
+  }
+
+  // ---------- 라우팅 ----------
+  async function route(keepScroll) {
+    if (!me) return askName();
+    const y = window.scrollY;
+    const h = location.hash.replace(/^#\/?/, "");
+    const p = h.split("/");
+    try {
+      if (p[0] === "new") await viewForm();
+      else if (p[0] === "e" && p[2] === "edit") await viewForm(p[1]);
+      else if (p[0] === "e" && p[1]) await viewDetail(p[1]);
+      else await viewList();
+    } catch (e) {
+      $("app").innerHTML = `<div class="empty"><b>😵</b>${esc(e.message)}<br><br><a href="#/" style="text-decoration:underline">처음으로</a></div>`;
+    }
+    window.scrollTo(0, keepScroll === true ? y : 0);
+  }
+  window.addEventListener("hashchange", () => route());
+  // 다른 앱 갔다 오면 최신 투표로 새로고침 (작성 중인 화면·저장 안 한 기록은 건드리지 않음)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !me || /new|edit/.test(location.hash)) return;
+    const rec = $("record");
+    if (rec && rec.value !== rec.defaultValue) return;
+    route(true);
+  });
+  route();
+
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+  </script>
+</body>
+</html>
