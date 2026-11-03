@@ -123,6 +123,23 @@
       opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px);
     }
     .toast.show { opacity: 1; }
+    /* 메인 */
+    .greet { font-size: 15px; color: var(--sub); margin: 8px 4px 16px; }
+    .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .tile {
+      position: relative; display: block; background: var(--card); border: 1px solid var(--line);
+      border-radius: 18px; padding: 18px 16px; min-height: 148px;
+      transition: transform .1s;
+    }
+    .tile:active { transform: scale(.97); }
+    a.tile { border-color: var(--accent); box-shadow: 0 4px 14px rgba(79,70,229,.10); }
+    .tile-icon { font-size: 34px; line-height: 1; margin-bottom: 14px; }
+    .tile-name { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+    .tile-desc { font-size: 13px; color: var(--sub); margin-top: 4px; line-height: 1.4; word-break: keep-all; }
+    .tile-desc b { color: var(--accent); font-weight: 650; }
+    .tile.off { opacity: .55; }
+    .soon { position: absolute; top: 12px; right: 12px; font-size: 11px; font-weight: 600; color: var(--sub); background: var(--line); padding: 2px 8px; border-radius: 999px; }
+
     .skeleton { height: 76px; border-radius: var(--radius); background: var(--card); margin-bottom: 10px; opacity: .6; }
   </style>
 </head>
@@ -188,7 +205,7 @@
     const b = $("meBtn"); if (b) b.onclick = askName;
   }
   function setFab(show) {
-    $("fab").innerHTML = show ? `<a class="fab" href="#/new">+ 새 일정</a>` : "";
+    $("fab").innerHTML = show ? `<a class="fab" href="#/schedule/new">+ 새 일정</a>` : "";
   }
 
   function askName() {
@@ -210,9 +227,52 @@
     $("nameIn").focus();
   }
 
+  // ---------- 메인 (기능 선택) ----------
+  // 새 기능을 만들면 여기에 한 줄 추가하고 ready: true로 바꾸면 됩니다.
+  const FEATURES = [
+    { id: "schedule", icon: "🗓️", name: "일정", desc: "날짜 투표하고 모임 기록 남기기", ready: true },
+    { id: "pay", icon: "💸", name: "정산", desc: "누가 얼마 냈는지 나누기", ready: false },
+    { id: "notice", icon: "📣", name: "공지", desc: "모임 공지와 투표", ready: false },
+    { id: "photo", icon: "📷", name: "사진", desc: "모임 사진 모아보기", ready: false },
+  ];
+
+  async function viewHome() {
+    setHeader("모임"); setFab(false);
+    const tiles = FEATURES.map((f) => f.ready
+      ? `<a class="tile" href="#/${f.id}">
+           <div class="tile-icon">${f.icon}</div>
+           <div class="tile-name">${esc(f.name)}</div>
+           <div class="tile-desc" id="sum-${f.id}">${esc(f.desc)}</div>
+         </a>`
+      : `<div class="tile off" aria-disabled="true">
+           <span class="soon">준비 중</span>
+           <div class="tile-icon">${f.icon}</div>
+           <div class="tile-name">${esc(f.name)}</div>
+           <div class="tile-desc">${esc(f.desc)}</div>
+         </div>`).join("");
+    $("app").innerHTML = `
+      <p class="greet">${esc(me)}님, 반가워요 👋</p>
+      <div class="tiles">${tiles}</div>`;
+
+    // 일정 타일에 요약 표시 (실패해도 기본 설명 유지)
+    try {
+      const { events } = await api("/events");
+      const voting = events.filter((e) => !e.decidedId).length;
+      const next = events.filter((e) => e.decidedId)
+        .map((e) => ({ e, c: decidedOf(e) }))
+        .filter((x) => x.c && dday(x.c.date) >= 0)
+        .sort((a, b) => sortKey(a.c).localeCompare(sortKey(b.c)))[0];
+      const bits = [];
+      if (next) { const d = dday(next.c.date); bits.push(`다음 모임 ${d === 0 ? "오늘" : "D-" + d}`); }
+      if (voting) bits.push(`투표 중 ${voting}개`);
+      const el = $("sum-schedule");
+      if (el && bits.length) el.innerHTML = `<b>${esc(bits.join(" · "))}</b>`;
+    } catch {}
+  }
+
   // ---------- 목록 ----------
   async function viewList() {
-    setHeader("모임"); setFab(true);
+    setHeader("일정", "#/"); setFab(true);
     $("app").innerHTML = `<div style="height:12px"></div>` + `<div class="skeleton"></div>`.repeat(3);
     const { events } = await api("/events");
     if (!events.length) {
@@ -227,7 +287,7 @@
     if (voting.length) {
       html += `<div class="section-title">투표 중</div>`;
       for (const e of voting) {
-        html += `<a class="card" href="#/e/${e.id}">
+        html += `<a class="card" href="#/schedule/e/${e.id}">
           <div class="card-top"><div class="card-title">${esc(e.title)}</div><span class="badge b-vote">${e.voterCount}명 투표</span></div>
           <div class="meta"><span>후보 ${e.candidates.length}개</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}</div>
         </a>`;
@@ -248,7 +308,7 @@
         : dd === 0 ? `<span class="badge b-dday">오늘</span>`
         : e.record ? `<span class="badge b-done">기록 있음</span>`
         : `<span class="badge b-todo">기록 남기기</span>`;
-      html += `<a class="card ${dd < 0 ? "past" : ""}" href="#/e/${e.id}">
+      html += `<a class="card ${dd < 0 ? "past" : ""}" href="#/schedule/e/${e.id}">
         <div class="card-top"><div class="card-title">${esc(e.title)}</div>${badge}</div>
         <div class="meta"><span>${fmtCand(c)}</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}</div>
       </a>`;
@@ -258,7 +318,7 @@
 
   // ---------- 상세 ----------
   async function viewDetail(id) {
-    setHeader("", "#/"); setFab(false);
+    setHeader("", "#/schedule"); setFab(false);
     $("app").innerHTML = `<div style="height:12px"></div><div class="skeleton" style="height:140px"></div>`;
     const { event, votes } = await api("/events/" + id);
     renderDetail(event, votes);
@@ -283,7 +343,7 @@
         ${place}
         <div class="meta" style="margin-top:6px">${dd > 0 ? `D-${dd}` : dd === 0 ? "오늘이에요!" : `${-dd}일 전`}${who[dec.id] ? ` · 가능: ${who[dec.id].map(esc).join(", ")}` : ""}</div>
         <div class="row-actions">
-          <a href="#/e/${ev.id}/edit">수정</a>
+          <a href="#/schedule/e/${ev.id}/edit">수정</a>
           <button id="reopen">투표 다시 열기</button>
         </div>
       </div>
@@ -298,7 +358,7 @@
         <h2>${esc(ev.title)}</h2>
         ${place}
         <div class="meta" style="margin-top:6px">${votes.length}명 투표${ev.createdBy ? ` · ${esc(ev.createdBy)}님이 만듦` : ""}</div>
-        <div class="row-actions"><a href="#/e/${ev.id}/edit">수정</a></div>
+        <div class="row-actions"><a href="#/schedule/e/${ev.id}/edit">수정</a></div>
       </div>
       <div class="section-title">가능한 날을 모두 눌러주세요</div>`;
       const cands = [...ev.candidates].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
@@ -316,7 +376,7 @@
         </div>`;
       }
     }
-    setHeader(dec ? "일정" : "일정 투표", "#/");
+    setHeader(dec ? "일정" : "일정 투표", "#/schedule");
     $("app").innerHTML = html;
 
     // 이벤트 연결
@@ -352,8 +412,8 @@
   async function viewForm(id) {
     setFab(false);
     let ev = null;
-    if (id) { setHeader("일정 수정", `#/e/${id}`); ev = (await api("/events/" + id)).event; }
-    else setHeader("새 일정", "#/");
+    if (id) { setHeader("일정 수정", `#/schedule/e/${id}`); ev = (await api("/events/" + id)).event; }
+    else setHeader("새 일정", "#/schedule");
 
     const rows = ev ? ev.candidates.map((c) => ({ ...c })) : [{ date: "", time: "" }];
     $("app").innerHTML = `
@@ -393,13 +453,13 @@
       try {
         const body = { title, place: $("fPlace").value, candidates };
         const r = ev ? await api(`/events/${ev.id}`, "PATCH", body) : await api("/events", "POST", { ...body, by: me });
-        location.replace(`#/e/${r.event.id}`);
+        location.replace(`#/schedule/e/${r.event.id}`);
       } catch (e) { toast(e.message); $("fSave").disabled = false; }
     };
     if ($("fDel")) $("fDel").onclick = async () => {
       if (!confirm("이 일정과 투표, 기록이 모두 지워져요. 삭제할까요?")) return;
       await api(`/events/${ev.id}`, "DELETE").catch((e) => toast(e.message));
-      location.replace("#/");
+      location.replace("#/schedule");
     };
   }
 
@@ -410,10 +470,16 @@
     const h = location.hash.replace(/^#\/?/, "");
     const p = h.split("/");
     try {
-      if (p[0] === "new") await viewForm();
-      else if (p[0] === "e" && p[2] === "edit") await viewForm(p[1]);
-      else if (p[0] === "e" && p[1]) await viewDetail(p[1]);
-      else await viewList();
+      if (p[0] === "schedule") {
+        const s = p.slice(1); // #/schedule/...
+        if (s[0] === "new") await viewForm();
+        else if (s[0] === "e" && s[2] === "edit") await viewForm(s[1]);
+        else if (s[0] === "e" && s[1]) await viewDetail(s[1]);
+        else await viewList();
+      }
+      // 예전 주소(#/e/ID)로 공유된 링크도 열리도록
+      else if (p[0] === "e" && p[1]) location.replace(`#/schedule/e/${p[1]}`);
+      else await viewHome();
     } catch (e) {
       $("app").innerHTML = `<div class="empty"><b>😵</b>${esc(e.message)}<br><br><a href="#/" style="text-decoration:underline">처음으로</a></div>`;
     }
