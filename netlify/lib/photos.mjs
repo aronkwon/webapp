@@ -3,7 +3,8 @@
 //   moim-photos 저장소: {photoId}/full, {photoId}/thumb   (이미지 바이트, 폰에서 줄여서 올림)
 //   moim 저장소:        pm/{parent}/{photoId}               (사진 정보, parent 예: e-일정ID, n-공지ID)
 // 사람마다/사진마다 키를 나눠서 여러 명이 동시에 올려도 서로 덮어쓰지 않음
-import { store, photoStore, json, fail, badMethod, clean, newId, ID_RE, readAll } from "./http.mjs";
+import { randomBytes } from "node:crypto";
+import { store, photoStore, json, fail, badMethod, clean, ID_RE, readAll } from "./http.mjs";
 
 const PARENT_RE = /^(e|n)-([a-z0-9]{1,24})$/;
 const PARENT_PREFIX = { e: "events/", n: "notices/" };
@@ -39,7 +40,7 @@ export async function deletePhotosOf(parent) {
 }
 
 // /api/photos...
-export async function handlePhotos(req, parts) {
+export async function handlePhotos(req, parts, user) {
   const method = req.method;
   const url = new URL(req.url);
 
@@ -52,8 +53,8 @@ export async function handlePhotos(req, parts) {
     return new Response(r.data, {
       headers: {
         "content-type": r.metadata?.type || "image/webp",
-        "cache-control": "public, max-age=31536000, immutable",
-        "netlify-cdn-cache-control": "public, max-age=31536000, immutable",
+        // 로그인한 멤버만 볼 수 있으므로 CDN 공용 캐시는 쓰지 않고 각자 폰에만 오래 저장
+        "cache-control": "private, max-age=31536000, immutable",
       },
     });
   }
@@ -78,7 +79,7 @@ export async function handlePhotos(req, parts) {
       const { blobs } = await store().list({ prefix: `pm/${parent}/` });
       if (blobs.length >= MAX_PER_PARENT) return fail(`사진은 글 하나에 ${MAX_PER_PARENT}장까지예요`);
 
-      const id = newId();
+      const id = randomBytes(12).toString("hex").slice(0, 24); // 추측하기 어려운 ID
       const ps = photoStore();
       await Promise.all([
         ps.set(`${id}/full`, await full.arrayBuffer(), { metadata: { type: full.type } }),
@@ -86,7 +87,7 @@ export async function handlePhotos(req, parts) {
       ]);
       const meta = {
         id, parent,
-        by: clean(form.get("by"), 20),
+        by: user.name, byUid: user.uid,
         w: Math.min(+form.get("w") || 0, 10000), h: Math.min(+form.get("h") || 0, 10000),
         size: full.size,
         at: new Date().toISOString(),

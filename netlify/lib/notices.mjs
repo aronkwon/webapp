@@ -3,7 +3,7 @@
 import { store, json, fail, badMethod, clean, newId, ID_RE, readAll } from "./http.mjs";
 import { photoCounts, deletePhotosOf } from "./photos.mjs";
 
-export async function handleNotices(req, parts, body) {
+export async function handleNotices(req, parts, body, user) {
   const s = store();
   const method = req.method;
 
@@ -20,7 +20,7 @@ export async function handleNotices(req, parts, body) {
         id: newId(), title,
         body: clean(body.body, 5000),
         pinned: !!body.pinned,
-        by: clean(body.by, 20),
+        by: user.name, byUid: user.uid,
         createdAt: now, updatedAt: now,
       };
       await s.setJSON(`notices/${n.id}`, n);

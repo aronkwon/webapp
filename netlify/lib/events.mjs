@@ -41,7 +41,7 @@ async function readVotes(s, id) {
   return votes.filter(Boolean);
 }
 
-export async function handleEvents(req, parts, body) {
+export async function handleEvents(req, parts, body, user) {
   const s = store();
   const method = req.method;
 
@@ -78,7 +78,7 @@ export async function handleEvents(req, parts, body) {
         candidates,
         decidedId: null,
         record: "",
-        createdBy: clean(body.by, 20),
+        createdBy: user.name, createdByUid: user.uid,
         createdAt: now,
         updatedAt: now,
       };
@@ -100,13 +100,12 @@ export async function handleEvents(req, parts, body) {
   // /api/events/:id/votes
   if (parts[2] === "votes") {
     if (method !== "PUT") return badMethod();
-    const name = clean(body.name, 20);
-    if (!name) return fail("이름이 필요해요");
+    // 투표는 로그인한 사람 본인 것만 (멤버 ID로 저장, 이름은 표시용)
     const valid = new Set(ev.candidates.map((c) => c.id));
     const choices = [...new Set(Array.isArray(body.choices) ? body.choices : [])].filter((c) => valid.has(c));
-    const key = `votes/${id}/${encodeURIComponent(name)}`;
+    const key = `votes/${id}/${user.uid}`;
     if (choices.length === 0) await s.delete(key);
-    else await s.setJSON(key, { name, choices, at: new Date().toISOString() });
+    else await s.setJSON(key, { uid: user.uid, name: user.name, choices, at: new Date().toISOString() });
     return json({ votes: await readVotes(s, id) });
   }
 

@@ -29,7 +29,7 @@ function parseEntry(body, base = {}) {
   return e;
 }
 
-export async function handleDues(req, parts, body) {
+export async function handleDues(req, parts, body, user) {
   const s = store();
   const method = req.method;
 
@@ -39,7 +39,7 @@ export async function handleDues(req, parts, body) {
       const e = parseEntry(body);
       if (typeof e === "string") return fail(e);
       const now = new Date().toISOString();
-      Object.assign(e, { id: newId(), name: e.name || "", by: clean(body.by, 20), createdAt: now, updatedAt: now });
+      Object.assign(e, { id: newId(), name: e.name || "", by: user.name, byUid: user.uid, createdAt: now, updatedAt: now });
       await s.setJSON(`dues/${e.id}`, e);
       return json({ entry: e }, 201);
     }

@@ -14,8 +14,11 @@ const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", "
 http.createServer(async (req, res) => {
   if (req.url.startsWith("/api/")) {
     const chunks = []; for await (const c of req) chunks.push(c);
-    const r = await handler(new Request("http://x" + req.url, { method: req.method, headers: req.headers, body: chunks.length ? Buffer.concat(chunks) : undefined }));
-    res.writeHead(r.status, Object.fromEntries(r.headers)); res.end(Buffer.from(await r.arrayBuffer())); return;
+    const r = await handler(new Request(`http://${req.headers.host}${req.url}`, { method: req.method, headers: req.headers, body: chunks.length ? Buffer.concat(chunks) : undefined }));
+    const h = Object.fromEntries(r.headers);
+    const cookies = r.headers.getSetCookie();
+    if (cookies.length) h["set-cookie"] = cookies;
+    res.writeHead(r.status, h); res.end(Buffer.from(await r.arrayBuffer())); return;
   }
   let p = path.join("public", decodeURIComponent(req.url.split("?")[0])); if (p.endsWith("/")) p += "index.html";
   fs.readFile(p, (e, d) => { if (e) { res.writeHead(404); res.end(); } else { res.writeHead(200, { "content-type": types[path.extname(p)] || "text/plain" }); res.end(d); } });

@@ -1,5 +1,5 @@
 // 버전을 올리면 새 캐시로 교체됨
-const CACHE = 'moim-v8';
+const CACHE = 'moim-v9';
 const ASSETS = ['./', 'index.html', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

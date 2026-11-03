@@ -167,6 +167,27 @@
     .vnav.prev { left: 0; border-radius: 0 10px 10px 0; } .vnav.next { right: 0; border-radius: 10px 0 0 10px; }
     .vnav[hidden] { display: none; }
 
+    /* 로그인 · 멤버 */
+    .me-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 4px; max-width: 46%; }
+    .me-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ava { flex: none; border-radius: 50%; object-fit: cover; background: var(--line); }
+    .ava-txt { display: inline-grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+    .login { text-align: center; padding: 48px 8px 0; }
+    .login h2 { margin: 16px 0 8px; font-size: 24px; letter-spacing: -0.02em; }
+    .login .hint { margin-bottom: 24px; }
+    .login-logo { border-radius: 22px; box-shadow: 0 8px 24px rgba(79,70,229,.25); }
+    .login-err { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); padding: 10px 14px; border-radius: 10px; font-size: 14px; margin: 0 0 16px; }
+    .btn-kakao { display: flex; align-items: center; justify-content: center; gap: 8px; background: #FEE500; color: rgba(0,0,0,.85); }
+    .welcome { background: var(--ok-soft); color: var(--ok); padding: 12px 14px; border-radius: 12px; margin-top: 8px; font-size: 14px; font-weight: 600; }
+    .mems { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+    .mem { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+    .mem + .mem { border-top: 1px solid var(--line); }
+    .mem-act { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+    .role { font-weight: 600; } .role.owner { color: var(--warn); } .role.admin { color: var(--accent); }
+    .mini { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+    .mini.danger { color: var(--danger); }
+    .inv { display: flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 6px; }
+
     /* 회비 내역 */
     .month-nav { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
     .month-nav strong { font-size: 18px; }
@@ -220,7 +241,12 @@
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch {} },
   };
-  let me = store.get("moim.name") || "";
+  // 로그인한 멤버 정보 (서버 세션 기준). me는 화면에 쓰는 이름
+  let user = null;
+  let me = "";
+  const setUser = (u) => { user = u; me = u?.name || ""; };
+  const isAdmin = () => user && (user.role === "owner" || user.role === "admin");
+  const ROLE_NAME = { owner: "방장", admin: "운영진", member: "멤버" };
 
   async function api(path, method = "GET", body) {
     const r = await fetch("/api" + path, {
@@ -229,6 +255,7 @@
       body: body ? JSON.stringify(body) : undefined,
     });
     const d = await r.json().catch(() => ({}));
+    if (r.status === 401) { setUser(null); viewLogin(); throw new Error(d.error || "로그인이 필요해요"); }
     if (!r.ok) throw new Error(d.error || "서버 오류가 났어요");
     return d;
   }
@@ -296,31 +323,215 @@
     $("hdr").innerHTML = `
       ${back ? `<a class="back" href="${back}" aria-label="뒤로">‹</a>` : ""}
       <h1>${esc(title)}</h1>
-      ${me ? `<button class="me-chip" id="meBtn">${esc(me)} ✎</button>` : ""}`;
-    const b = $("meBtn"); if (b) b.onclick = askName;
+      ${user ? `<a class="me-chip" href="#/me">${avatar(user, 22)}<span>${esc(me)}</span></a>` : ""}`;
   }
+  // 카카오 프로필 사진 (없으면 이름 첫 글자)
+  const avatar = (u, size = 36) => u.avatar
+    ? `<img class="ava" src="${esc(u.avatar)}" alt="" width="${size}" height="${size}" referrerpolicy="no-referrer" loading="lazy">`
+    : `<span class="ava ava-txt" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px">${esc((u.name || "?").slice(0, 1))}</span>`;
   // 오른쪽 아래 떠 있는 버튼. setFab(false)로 숨김
   function setFab(href, label) {
     $("fab").innerHTML = href ? `<a class="fab" href="${href}">${esc(label)}</a>` : "";
   }
 
-  function askName() {
+  // ---------- 로그인 · 초대 수락 ----------
+  const LOGIN_ERRORS = {
+    noinvite: "아직 모임 멤버가 아니에요. 초대 링크를 받아서 다시 들어와 주세요.",
+    cancel: "카카오 로그인을 취소했어요.",
+    state: "로그인 시간이 지났어요. 다시 시도해 주세요.",
+    kakao: "카카오 로그인 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.",
+    config: "아직 카카오 로그인 설정이 안 됐어요. 방장에게 알려주세요.",
+  };
+  const kakaoBtn = (invite) =>
+    `<a class="btn btn-kakao" href="/api/auth/kakao${invite ? `?invite=${encodeURIComponent(invite)}` : ""}">
+       <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3C6.48 3 2 6.58 2 11c0 2.83 1.86 5.32 4.66 6.73l-.95 3.5c-.08.3.26.54.52.37l4.17-2.77c.52.06 1.05.1 1.6.1 5.52 0 10-3.58 10-8S17.52 3 12 3z"/></svg>
+       카카오로 시작하기</a>`;
+
+  function viewLogin(error) {
     setHeader("모임"); setFab(false);
+    const msg = LOGIN_ERRORS[error];
     $("app").innerHTML = `
-      <div style="padding-top:40px">
-        <h2 style="margin:0 0 6px">이름을 알려주세요</h2>
-        <p class="hint" style="margin-bottom:20px">투표할 때 친구들에게 보이는 이름이에요.</p>
-        <label class="field"><input type="text" id="nameIn" maxlength="20" placeholder="예: 권" value="${esc(me)}" autocomplete="nickname"></label>
-        <button class="btn btn-primary" id="nameOk">시작하기</button>
+      <div class="login">
+        <img src="icons/icon-192.png" alt="" width="88" height="88" class="login-logo">
+        <h2>우리 모임</h2>
+        <p class="hint">일정 투표, 공지, 회비 내역을 친구들과 함께 관리해요.</p>
+        ${msg ? `<p class="login-err">${esc(msg)}</p>` : ""}
+        ${kakaoBtn("")}
+        <p class="hint" style="margin-top:14px">처음이라면 친구에게 받은 초대 링크로 들어와 주세요.</p>
       </div>`;
-    const go = () => {
-      const v = $("nameIn").value.trim();
-      if (!v) return toast("이름을 입력해 주세요");
-      me = v; store.set("moim.name", v); route();
+  }
+
+  async function viewJoin(code) {
+    setHeader("모임"); setFab(false);
+    $("app").innerHTML = `<div class="login"><div class="spin" style="margin:60px auto"></div></div>`;
+    const d = await fetch(`/api/invites/${encodeURIComponent(code)}/check`).then((r) => r.json()).catch(() => ({}));
+    if (!d.valid) {
+      $("app").innerHTML = `<div class="login"><b style="font-size:40px">😢</b><h2>초대 링크가 만료됐어요</h2>
+        <p class="hint">초대한 친구에게 새 링크를 부탁해 주세요. 이미 멤버라면 아래로 로그인하면 돼요.</p>${kakaoBtn("")}</div>`;
+      return;
+    }
+    $("app").innerHTML = `
+      <div class="login">
+        <img src="icons/icon-192.png" alt="" width="88" height="88" class="login-logo">
+        <h2>${esc(d.invitedBy || "친구")}님이<br>모임에 초대했어요</h2>
+        <p class="hint">카카오 계정으로 바로 가입돼요. 별도 비밀번호는 없어요.</p>
+        ${kakaoBtn(code)}
+      </div>`;
+  }
+
+  // ---------- 내 정보 ----------
+  function viewMe(welcome) {
+    setHeader("내 정보", "#/"); setFab(false);
+    $("app").innerHTML = `
+      ${welcome ? `<div class="welcome">🎉 가입을 환영해요! 모임에서 쓸 이름을 확인해 주세요.</div>` : ""}
+      <div class="hero" style="margin-top:8px;display:flex;align-items:center;gap:14px">
+        ${avatar(user, 56)}
+        <div><div style="font-weight:700;font-size:18px">${esc(user.name)}</div>
+          <div class="meta">${ROLE_NAME[user.role]} · 카카오 계정으로 로그인</div></div>
+      </div>
+      <div class="section-title">모임에서 쓰는 이름</div>
+      <label class="field"><input type="text" id="myName" maxlength="20" value="${esc(user.name)}"></label>
+      <button class="btn btn-primary" id="saveName">이름 저장</button>
+      <div class="section-title" style="margin-top:28px">모임</div>
+      <a class="card" href="#/members"><div class="card-top"><div class="card-title">👥 멤버 ${isAdmin() ? "관리 · 초대하기" : "보기"}</div><span style="color:var(--sub)">›</span></div></a>
+      <button class="btn btn-danger" id="logout" style="margin-top:20px">로그아웃</button>`;
+    $("saveName").onclick = async () => {
+      const name = $("myName").value.trim();
+      if (!name) return toast("이름을 입력해 주세요");
+      const r = await api("/me", "PATCH", { name }).catch((e) => toast(e.message));
+      if (r) { setUser(r.user); toast("이름을 바꿨어요"); welcome ? location.replace("#/") : viewMe(); }
     };
-    $("nameOk").onclick = go;
-    $("nameIn").onkeydown = (e) => { if (e.key === "Enter") go(); };
-    $("nameIn").focus();
+    $("logout").onclick = async () => {
+      if (!confirm("로그아웃할까요?")) return;
+      await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+      setUser(null); location.replace("#/"); viewLogin();
+    };
+  }
+
+  // ---------- 멤버 · 초대 ----------
+  let kakaoSdkP;
+  function loadKakaoSdk(jsKey) {
+    return (kakaoSdkP ||= new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://t1.kakaocdn.net/kakao_js_sdk/2.8.4/kakao.min.js";
+      s.crossOrigin = "anonymous";
+      s.onload = () => { try { if (!Kakao.isInitialized()) Kakao.init(jsKey); res(Kakao); } catch (e) { rej(e); } };
+      s.onerror = () => { kakaoSdkP = null; rej(new Error("카카오 SDK를 불러오지 못했어요")); };
+      document.head.appendChild(s);
+    }));
+  }
+  const inviteUrl = (code) => `${location.origin}/#/join/${code}`;
+
+  // 카카오톡 공유 → 안 되면 휴대폰 공유창 → 안 되면 링크 복사
+  // 휴대폰은 버튼을 누른 직후에만 공유창을 열어주므로, 설정·SDK는 화면을 열 때 미리 준비해 둠
+  let shareCfg = null;
+  async function prepareShare() {
+    shareCfg ||= await fetch("/api/config").then((r) => r.json()).catch(() => ({}));
+    if (shareCfg.kakaoJsKey) loadKakaoSdk(shareCfg.kakaoJsKey).catch(() => {});
+  }
+  function sendInvite(code) {
+    const url = inviteUrl(code);
+    const text = `${me}님이 우리 모임에 초대했어요. 카카오 계정으로 가입해 주세요! (7일 동안 유효)`;
+    if (shareCfg?.kakaoJsKey && window.Kakao?.isInitialized?.()) {
+      try {
+        Kakao.Share.sendDefault({
+          objectType: "feed",
+          content: {
+            title: "모임 초대장",
+            description: text,
+            imageUrl: `${location.origin}/icons/icon-512.png`,
+            link: { mobileWebUrl: url, webUrl: url },
+          },
+          buttons: [{ title: "가입하기", link: { mobileWebUrl: url, webUrl: url } }],
+        });
+        return;
+      } catch (e) { console.warn(e); }
+    }
+    if (navigator.share) {
+      navigator.share({ title: "모임 초대", text, url }).catch((e) => { if (e.name !== "AbortError") copyText(url); });
+      return;
+    }
+    copyText(url);
+  }
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); toast("링크를 복사했어요. 카톡방에 붙여넣어 주세요"); }
+    catch { prompt("아래 링크를 복사해 주세요", t); }
+  }
+
+  async function viewMembers() {
+    setHeader("멤버", "#/me"); setFab(false);
+    $("app").innerHTML = `<div style="height:12px"></div>` + `<div class="skeleton"></div>`.repeat(3);
+    const [{ members }, inv] = await Promise.all([
+      api("/members"),
+      isAdmin() ? api("/invites") : Promise.resolve({ invites: [] }),
+      isAdmin() ? prepareShare() : null,
+    ]);
+    // 운영진이면 보낼 초대 링크를 미리 하나 준비 (내 링크가 하루 이상 남아 있으면 그걸 사용)
+    let myInvite = null;
+    if (isAdmin()) {
+      myInvite = inv.invites.find((i) => i.createdByUid === user.uid && Date.parse(i.expiresAt) - Date.now() > 864e5);
+      if (!myInvite) {
+        myInvite = (await api("/invites", "POST")).invite;
+        inv.invites.unshift(myInvite);
+      }
+    }
+    const order = { owner: 0, admin: 1, member: 2 };
+    members.sort((a, b) => order[a.role] - order[b.role] || a.joinedAt.localeCompare(b.joinedAt));
+
+    const invites = inv.invites.map((i) => `
+      <div class="inv">
+        <div style="flex:1;min-width:0"><div style="font-weight:600">${esc(i.createdBy)}님의 초대 링크</div>
+          <div class="meta">${fmtWhen(i.expiresAt)}까지 · ${i.uses}명 가입</div></div>
+        <button class="mini" data-share="${esc(i.code)}">보내기</button>
+        <button class="mini" data-copy="${esc(i.code)}">복사</button>
+        <button class="mini danger" data-revoke="${esc(i.code)}">취소</button>
+      </div>`).join("");
+
+    const rows = members.map((m) => {
+      const self = m.uid === user.uid;
+      let actions = "";
+      if (!self && m.role !== "owner" && isAdmin()) {
+        if (user.role === "owner") actions += `<button class="mini" data-role="${m.uid}" data-to="${m.role === "admin" ? "member" : "admin"}">${m.role === "admin" ? "운영진 해제" : "운영진 지정"}</button>`;
+        if (m.role === "member" || user.role === "owner") actions += `<button class="mini danger" data-kick="${m.uid}" data-name="${esc(m.name)}">내보내기</button>`;
+      }
+      return `<div class="mem">
+        ${avatar(m, 40)}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:650">${esc(m.name)}${self ? ` <span class="meta">(나)</span>` : ""}</div>
+          <div class="meta">${m.role !== "member" ? `<span class="role ${m.role}">${ROLE_NAME[m.role]}</span> · ` : ""}${fmtWhen(m.joinedAt)} 가입</div>
+        </div>
+        <div class="mem-act">${actions}</div>
+      </div>`;
+    }).join("");
+
+    $("app").innerHTML = `
+      ${isAdmin() ? `
+        <div class="hero" style="margin-top:8px">
+          <div style="font-weight:700;font-size:17px">친구 초대하기</div>
+          <p class="hint" style="margin:4px 0 14px">초대 링크를 카카오톡으로 보내면, 친구가 카카오 계정으로 바로 가입해요. 링크는 7일 동안 여러 명이 쓸 수 있어요.</p>
+          <button class="btn btn-kakao" id="newInvite">카카오톡으로 초대 보내기</button>
+        </div>
+        ${invites ? `<div class="section-title">보낸 초대 링크</div>${invites}` : ""}` : ""}
+      <div class="section-title">멤버 ${members.length}명</div>
+      <div class="mems">${rows}</div>`;
+
+    if ($("newInvite")) $("newInvite").onclick = () => sendInvite(myInvite.code);
+    document.querySelectorAll("[data-share]").forEach((b) => b.onclick = () => sendInvite(b.dataset.share));
+    document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copyText(inviteUrl(b.dataset.copy)));
+    document.querySelectorAll("[data-revoke]").forEach((b) => b.onclick = async () => {
+      if (!confirm("이 초대 링크를 취소할까요? 이미 가입한 사람은 그대로예요.")) return;
+      await api(`/invites/${b.dataset.revoke}`, "DELETE").catch((e) => toast(e.message));
+      viewMembers();
+    });
+    document.querySelectorAll("[data-role]").forEach((b) => b.onclick = async () => {
+      await api(`/members/${b.dataset.role}`, "PATCH", { role: b.dataset.to }).catch((e) => toast(e.message));
+      viewMembers();
+    });
+    document.querySelectorAll("[data-kick]").forEach((b) => b.onclick = async () => {
+      if (!confirm(`${b.dataset.name}님을 모임에서 내보낼까요? 바로 접속이 끊겨요. (쓴 글은 남아요)`)) return;
+      await api(`/members/${b.dataset.kick}`, "DELETE").catch((e) => toast(e.message));
+      viewMembers();
+    });
   }
 
   // ---------- 사진 (일정·공지 공용) ----------
@@ -358,7 +569,6 @@
     const ext = (b) => (b.type === "image/webp" ? "webp" : "jpg");
     const fd = new FormData();
     fd.append("parent", parent);
-    fd.append("by", me);
     fd.append("w", full.w); fd.append("h", full.h);
     fd.append("full", full.blob, "full." + ext(full.blob));
     fd.append("thumb", thumb.blob, "thumb." + ext(thumb.blob));
@@ -481,6 +691,7 @@
     { id: "schedule", icon: "🗓️", name: "일정", desc: "날짜 투표하고 모임 기록 남기기", ready: true },
     { id: "notice", icon: "📣", name: "공지", desc: "모임 소식과 안내 남기기", ready: true },
     { id: "dues", icon: "💰", name: "회비 내역", desc: "월별 회비 입출금 관리", ready: true },
+    { id: "members", icon: "👥", name: "멤버", desc: "함께하는 친구들 · 초대하기", ready: true },
   ];
 
   async function viewHome() {
@@ -502,6 +713,10 @@
       <div class="tiles">${tiles}</div>`;
 
     // 타일에 요약 표시 (실패해도 기본 설명 유지)
+    api("/members").then(({ members }) => {
+      const el = $("sum-members");
+      if (el) el.innerHTML = `<b>${members.length}명</b>${isAdmin() ? " · 초대하기" : ""}`;
+    }).catch(() => {});
     api("/dues").then(({ entries }) => {
       const el = $("sum-dues");
       if (el && entries.length) el.innerHTML = `<b>잔액 ${won(sumOf(entries))}</b>`;
@@ -585,7 +800,7 @@
     const count = {}, who = {};
     for (const v of votes) for (const c of v.choices) { count[c] = (count[c] || 0) + 1; (who[c] ||= []).push(v.name); }
     const max = Math.max(0, ...Object.values(count));
-    const mine = new Set(votes.find((v) => v.name === me)?.choices || []);
+    const mine = new Set(votes.find((v) => v.uid ? v.uid === user.uid : v.name === me)?.choices || []);
     const dec = decidedOf(ev);
     const placeHref = ev.placeUrl || (ev.place ? mapUrl(ev.place) : "");
     const hasMap = ev.placeLat != null && ev.placeLng != null;
@@ -651,7 +866,7 @@
       mine.has(cid) ? mine.delete(cid) : mine.add(cid);
       b.classList.toggle("on");
       try {
-        const r = await api(`/events/${ev.id}/votes`, "PUT", { name: me, choices: [...mine] });
+        const r = await api(`/events/${ev.id}/votes`, "PUT", { choices: [...mine] });
         renderDetail(ev, r.votes);
       } catch (e) { toast(e.message); viewDetail(ev.id); }
     });
@@ -722,7 +937,7 @@
       $("fSave").disabled = true;
       try {
         const body = { title, place: $("fPlace").value, placeUrl: $("fPlaceUrl").value, candidates };
-        const r = ev ? await api(`/events/${ev.id}`, "PATCH", body) : await api("/events", "POST", { ...body, by: me });
+        const r = ev ? await api(`/events/${ev.id}`, "PATCH", body) : await api("/events", "POST", body);
         location.replace(`#/schedule/e/${r.event.id}`);
       } catch (e) { toast(e.message); $("fSave").disabled = false; }
     };
@@ -822,7 +1037,7 @@
       const btn = $("nSave"); btn.disabled = true;
       const body = { title, body: $("nBody").value, pinned: $("nPin").checked };
       try {
-        const r = n ? await api(`/notices/${n.id}`, "PATCH", body) : await api("/notices", "POST", { ...body, by: me });
+        const r = n ? await api(`/notices/${n.id}`, "PATCH", body) : await api("/notices", "POST", body);
         let failed = 0;
         for (let i = 0; i < files.length; i++) {
           btn.textContent = `사진 올리는 중… ${i + 1}/${files.length}`;
@@ -943,7 +1158,7 @@
       $("dSave").disabled = true;
       const body = { type, amount, memo, name: $("dName").value, date: $("dDate").value };
       try {
-        const r = e ? await api(`/dues/${e.id}`, "PATCH", body) : await api("/dues", "POST", { ...body, by: me });
+        const r = e ? await api(`/dues/${e.id}`, "PATCH", body) : await api("/dues", "POST", body);
         location.replace(`#/dues/${r.entry.date.slice(0, 7)}`);
       } catch (err) { toast(err.message); $("dSave").disabled = false; }
     };
@@ -955,13 +1170,34 @@
   }
 
   // ---------- 라우팅 ----------
+  // 세션으로 내 정보 확인 (쿠키는 서버가 관리)
+  async function loadMe() {
+    try {
+      const r = await fetch("/api/me");
+      if (!r.ok) return false;
+      setUser((await r.json()).user);
+      return true;
+    } catch { return false; }
+  }
+
   async function route(keepScroll) {
-    if (!me) return askName();
     const y = window.scrollY;
     const h = location.hash.replace(/^#\/?/, "");
     const p = h.split("/");
+    const query = new URLSearchParams(h.split("?")[1] || "");
+    const page = p[0].split("?")[0];
     try {
-      if (p[0] === "schedule") {
+      // 로그인 없이 볼 수 있는 화면: 초대 수락, 로그인
+      if (page === "join" && p[1]) {
+        if (user || (await loadMe())) { toast("이미 모임 멤버예요"); return location.replace("#/"); }
+        return await viewJoin(p[1]);
+      }
+      if (!user && !(await loadMe())) return viewLogin(page === "login" ? query.get("error") : null);
+      if (page === "login") return location.replace("#/");
+
+      if (page === "me") viewMe(query.get("welcome") === "1");
+      else if (page === "members") await viewMembers();
+      else if (p[0] === "schedule") {
         const s = p.slice(1); // #/schedule/...
         if (s[0] === "new") await viewForm();
         else if (s[0] === "e" && s[2] === "edit") await viewForm(s[1]);
@@ -985,6 +1221,7 @@
       else if (p[0] === "e" && p[1]) location.replace(`#/schedule/e/${p[1]}`);
       else await viewHome();
     } catch (e) {
+      if (!user) return; // 로그인이 풀려서 로그인 화면이 이미 떠 있음
       $("app").innerHTML = `<div class="empty"><b>😵</b>${esc(e.message)}<br><br><a href="#/" style="text-decoration:underline">처음으로</a></div>`;
     }
     window.scrollTo(0, keepScroll === true ? y : 0);
@@ -992,7 +1229,7 @@
   window.addEventListener("hashchange", () => route());
   // 다른 앱 갔다 오면 최신 투표로 새로고침 (작성 중인 화면·저장 안 한 기록은 건드리지 않음)
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible" || !me || /new|edit|dues\/e\//.test(location.hash)) return;
+    if (document.visibilityState !== "visible" || !user || /new|edit|dues\/e\//.test(location.hash)) return;
     if (uploading || document.querySelector(".viewer")) return; // 사진 올리는 중·크게 보는 중엔 그대로
     const rec = $("record");
     if (rec && rec.value !== rec.defaultValue) return;
