@@ -145,6 +145,34 @@
     .tile.off { opacity: .55; }
     .soon { position: absolute; top: 12px; right: 12px; font-size: 11px; font-weight: 600; color: var(--sub); background: var(--line); padding: 2px 8px; border-radius: 999px; }
 
+    /* 사진 */
+    .pgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 10px; }
+    .pgrid:empty { display: none; }
+    .pthumb { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--line); padding: 0; }
+    .pthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .pending { display: grid; place-items: center; }
+    .spin { width: 22px; height: 22px; border: 3px solid var(--sub); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .padd { cursor: pointer; }
+    .prm { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; }
+    .viewer { position: fixed; inset: 0; z-index: 2000; background: #000; display: flex; align-items: center; justify-content: center; touch-action: pan-y; }
+    .vimg { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .vbar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: calc(10px + env(safe-area-inset-top)) 12px 10px 16px; color: #fff; font-size: 14px; background: linear-gradient(rgba(0,0,0,.6), transparent); z-index: 1; }
+    .vby { flex: 1; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vbar button { color: #fff; }
+    .vdel { font-size: 14px; opacity: .85; }
+    .vclose { font-size: 22px; padding: 4px 8px; }
+    .vnav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; font-size: 36px; color: #fff; background: rgba(0,0,0,.25); }
+    .vnav.prev { left: 0; border-radius: 0 10px 10px 0; } .vnav.next { right: 0; border-radius: 10px 0 0 10px; }
+    .vnav[hidden] { display: none; }
+
+    /* 공지 */
+    .snippet { font-size: 14px; color: var(--sub); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nbody { margin-top: 14px; white-space: pre-wrap; word-break: break-word; line-height: 1.65; }
+    .link { color: var(--accent); text-decoration: underline; word-break: break-all; }
+    .check { display: flex; align-items: center; gap: 8px; margin: -4px 2px 16px; font-size: 15px; }
+    .check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
     .skeleton { height: 76px; border-radius: var(--radius); background: var(--card); margin-bottom: 10px; opacity: .6; }
   </style>
 </head>
@@ -241,8 +269,9 @@
       ${me ? `<button class="me-chip" id="meBtn">${esc(me)} ✎</button>` : ""}`;
     const b = $("meBtn"); if (b) b.onclick = askName;
   }
-  function setFab(show) {
-    $("fab").innerHTML = show ? `<a class="fab" href="#/schedule/new">+ 새 일정</a>` : "";
+  // 오른쪽 아래 떠 있는 버튼. setFab(false)로 숨김
+  function setFab(href, label) {
+    $("fab").innerHTML = href ? `<a class="fab" href="${href}">${esc(label)}</a>` : "";
   }
 
   function askName() {
@@ -264,13 +293,159 @@
     $("nameIn").focus();
   }
 
+  // ---------- 사진 (일정·공지 공용) ----------
+  // 올리기 전에 폰에서 줄임: 본문용 긴 변 1600px, 썸네일 480px. 원본은 올리지 않음
+  async function shrink(file, max, quality) {
+    let src;
+    try { src = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch {
+      src = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = () => rej(new Error("이 사진은 열 수 없어요"));
+        img.src = URL.createObjectURL(file);
+      });
+    }
+    const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+    const r = Math.min(1, max / Math.max(sw, sh));
+    const w = Math.round(sw * r), h = Math.round(sh * r);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    c.getContext("2d").drawImage(src, 0, 0, w, h);
+    const enc = (type, q) => new Promise((res) => c.toBlob(res, type, q));
+    let blob = await enc("image/webp", quality);
+    if (!blob || blob.type !== "image/webp") blob = await enc("image/jpeg", quality); // 아이폰 사파리는 WebP 저장 불가
+    return { blob, w, h };
+  }
+  async function preparePhoto(file) {
+    let full = await shrink(file, 1600, 0.8);
+    if (full.blob.size > 1.4 * 1024 * 1024) full = await shrink(file, 1280, 0.6);
+    const thumb = await shrink(file, 480, 0.7);
+    return { full, thumb };
+  }
+  async function uploadPhoto(parent, file) {
+    const { full, thumb } = await preparePhoto(file);
+    const ext = (b) => (b.type === "image/webp" ? "webp" : "jpg");
+    const fd = new FormData();
+    fd.append("parent", parent);
+    fd.append("by", me);
+    fd.append("w", full.w); fd.append("h", full.h);
+    fd.append("full", full.blob, "full." + ext(full.blob));
+    fd.append("thumb", thumb.blob, "thumb." + ext(thumb.blob));
+    const r = await fetch("/api/photos", { method: "POST", body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "사진을 올리지 못했어요");
+    return d.photo;
+  }
+
+  // 글 하나에 붙는 사진 묶음 화면. 같은 글을 다시 그려도(투표 등) 올리는 중인 상태가 유지되도록 재사용
+  const photoWidgets = new Map();
+  let uploading = 0;
+  function mountPhotos(slot, parent) {
+    let w = photoWidgets.get(parent);
+    if (!w) {
+      const el = document.createElement("div");
+      el.innerHTML = `
+        <div class="section-title">사진 <span class="pc"></span></div>
+        <div class="pgrid"></div>
+        <label class="btn btn-ghost padd">+ 사진 추가<input type="file" accept="image/*" multiple hidden></label>
+        <p class="hint pstatus"></p>`;
+      w = { el, parent, photos: [], pending: 0 };
+      photoWidgets.set(parent, w);
+      el.querySelector("input").onchange = (e) => { addPhotos(w, [...e.target.files]); e.target.value = ""; };
+      api(`/photos?parent=${parent}`).then((d) => { w.photos = d.photos; drawPhotos(w); }).catch(() => {});
+    }
+    slot.replaceWith(w.el);
+    drawPhotos(w);
+  }
+  function drawPhotos(w) {
+    w.el.querySelector(".pc").textContent = w.photos.length ? w.photos.length : "";
+    w.el.querySelector(".pgrid").innerHTML =
+      w.photos.map((p, i) => `<button class="pthumb" data-i="${i}" aria-label="사진 크게 보기"><img loading="lazy" src="/api/photos/${p.id}/thumb" alt=""></button>`).join("") +
+      `<div class="pthumb pending"><span class="spin"></span></div>`.repeat(w.pending);
+    w.el.querySelectorAll("[data-i]").forEach((b) => b.onclick = () => openViewer(w, +b.dataset.i));
+  }
+  async function addPhotos(w, files) {
+    const st = w.el.querySelector(".pstatus");
+    w.pending += files.length; uploading += files.length; drawPhotos(w);
+    let done = 0, failed = 0;
+    for (const f of files) {
+      st.textContent = `올리는 중… ${done + failed + 1}/${files.length}`;
+      try { w.photos.push(await uploadPhoto(w.parent, f)); done++; }
+      catch (e) { failed++; toast(e.message); }
+      w.pending--; uploading--; drawPhotos(w);
+    }
+    st.textContent = failed ? `${done}장 올림, ${failed}장 실패` : "";
+  }
+
+  // 크게 보기 (좌우 넘기기, 휴대폰 뒤로가기로 닫기)
+  function openViewer(w, i) {
+    const v = document.createElement("div");
+    v.className = "viewer";
+    v.innerHTML = `
+      <div class="vbar"><span class="vcount"></span><span class="vby"></span>
+        <button class="vdel">삭제</button><button class="vclose" aria-label="닫기">✕</button></div>
+      <img class="vimg" alt="">
+      <button class="vnav prev" aria-label="이전">‹</button><button class="vnav next" aria-label="다음">›</button>`;
+    document.body.appendChild(v);
+    document.body.style.overflow = "hidden";
+    const show = () => {
+      const p = w.photos[i];
+      v.querySelector(".vimg").src = `/api/photos/${p.id}/full`;
+      v.querySelector(".vcount").textContent = `${i + 1} / ${w.photos.length}`;
+      v.querySelector(".vby").textContent = [p.by, fmtWhen(p.at)].filter(Boolean).join(" · ");
+      v.querySelector(".prev").hidden = i === 0;
+      v.querySelector(".next").hidden = i === w.photos.length - 1;
+    };
+    const go = (d) => { const n = i + d; if (n >= 0 && n < w.photos.length) { i = n; show(); } };
+    let closed = false;
+    const close = (fromPop) => {
+      if (closed) return; closed = true;
+      v.remove(); document.body.style.overflow = "";
+      removeEventListener("popstate", onPop); removeEventListener("keydown", onKey);
+      if (!fromPop) history.back();
+    };
+    const onPop = () => close(true);
+    const onKey = (e) => { if (e.key === "Escape") close(); if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); };
+    history.pushState({ viewer: 1 }, "");
+    addEventListener("popstate", onPop); addEventListener("keydown", onKey);
+    v.querySelector(".vclose").onclick = () => close();
+    v.querySelector(".prev").onclick = () => go(-1);
+    v.querySelector(".next").onclick = () => go(1);
+    v.querySelector(".vdel").onclick = async () => {
+      if (!confirm("이 사진을 삭제할까요?")) return;
+      const p = w.photos[i];
+      try { await api(`/photos/${p.id}?parent=${w.parent}`, "DELETE"); }
+      catch (e) { return toast(e.message); }
+      w.photos.splice(i, 1); drawPhotos(w);
+      if (!w.photos.length) return close();
+      i = Math.min(i, w.photos.length - 1); show();
+    };
+    let x0 = null;
+    v.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    v.addEventListener("touchend", (e) => {
+      if (x0 == null) return;
+      const dx = e.changedTouches[0].clientX - x0; x0 = null;
+      if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+    });
+    show();
+  }
+
+  // 작성 시각 표시: 오늘이면 시간, 올해면 월/일, 아니면 연도까지
+  function fmtWhen(iso) {
+    const d = new Date(iso), now = new Date();
+    if (d.toDateString() === now.toDateString()) return `${d.getHours() < 12 ? "오전" : "오후"} ${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear() !== now.getFullYear() ? d.getFullYear() + "년 " : ""}${d.getMonth() + 1}월 ${d.getDate()}일`;
+  }
+  // 본문 속 링크를 누를 수 있게
+  const linkify = (text) => esc(text).replace(/https?:\/\/[^\s<]+/g, (u) => `<a class="link" href="${u}" target="_blank" rel="noopener">${u}</a>`);
+
   // ---------- 메인 (기능 선택) ----------
   // 새 기능을 만들면 여기에 한 줄 추가하고 ready: true로 바꾸면 됩니다.
   const FEATURES = [
     { id: "schedule", icon: "🗓️", name: "일정", desc: "날짜 투표하고 모임 기록 남기기", ready: true },
+    { id: "notice", icon: "📣", name: "공지", desc: "모임 소식과 안내 남기기", ready: true },
     { id: "pay", icon: "💸", name: "정산", desc: "누가 얼마 냈는지 나누기", ready: false },
-    { id: "notice", icon: "📣", name: "공지", desc: "모임 공지와 투표", ready: false },
-    { id: "photo", icon: "📷", name: "사진", desc: "모임 사진 모아보기", ready: false },
   ];
 
   async function viewHome() {
@@ -291,7 +466,12 @@
       <p class="greet">${esc(me)}님, 반가워요 👋</p>
       <div class="tiles">${tiles}</div>`;
 
-    // 일정 타일에 요약 표시 (실패해도 기본 설명 유지)
+    // 타일에 요약 표시 (실패해도 기본 설명 유지)
+    api("/notices").then(({ notices }) => {
+      const top = [...notices].sort((a, b) => (b.pinned - a.pinned) || b.createdAt.localeCompare(a.createdAt))[0];
+      const el = $("sum-notice");
+      if (el && top) el.innerHTML = `<b>${top.pinned ? "📌 " : ""}${esc(top.title)}</b>`;
+    }).catch(() => {});
     try {
       const { events } = await api("/events");
       const voting = events.filter((e) => !e.decidedId).length;
@@ -309,7 +489,7 @@
 
   // ---------- 목록 ----------
   async function viewList() {
-    setHeader("일정", "#/"); setFab(true);
+    setHeader("일정", "#/"); setFab("#/schedule/new", "+ 새 일정");
     $("app").innerHTML = `<div style="height:12px"></div>` + `<div class="skeleton"></div>`.repeat(3);
     const { events } = await api("/events");
     if (!events.length) {
@@ -326,7 +506,7 @@
       for (const e of voting) {
         html += `<a class="card" href="#/schedule/e/${e.id}">
           <div class="card-top"><div class="card-title">${esc(e.title)}</div><span class="badge b-vote">${e.voterCount}명 투표</span></div>
-          <div class="meta"><span>후보 ${e.candidates.length}개</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}</div>
+          <div class="meta"><span>후보 ${e.candidates.length}개</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}${e.photoCount ? `<span>📷 ${e.photoCount}</span>` : ""}</div>
         </a>`;
       }
     }
@@ -347,7 +527,7 @@
         : `<span class="badge b-todo">기록 남기기</span>`;
       html += `<a class="card ${dd < 0 ? "past" : ""}" href="#/schedule/e/${e.id}">
         <div class="card-top"><div class="card-title">${esc(e.title)}</div>${badge}</div>
-        <div class="meta"><span>${fmtCand(c)}</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}</div>
+        <div class="meta"><span>${fmtCand(c)}</span>${e.place ? `<span>${esc(e.place)}</span>` : ""}${e.photoCount ? `<span>📷 ${e.photoCount}</span>` : ""}</div>
       </a>`;
     }
     $("app").innerHTML = html;
@@ -358,6 +538,7 @@
     setHeader("", "#/schedule"); setFab(false);
     $("app").innerHTML = `<div style="height:12px"></div><div class="skeleton" style="height:140px"></div>`;
     const { event, votes } = await api("/events/" + id);
+    photoWidgets.delete(`e-${id}`); // 화면에 새로 들어올 땐 사진 목록도 새로
     renderDetail(event, votes);
   }
 
@@ -419,9 +600,11 @@
         </div>`;
       }
     }
+    html += `<div id="photoSlot"></div>`;
     setHeader(dec ? "일정" : "일정 투표", "#/schedule");
     $("app").innerHTML = html;
     if (hasMap) drawMap($("map"), ev.placeLat, ev.placeLng);
+    mountPhotos($("photoSlot"), `e-${ev.id}`);
 
     // 이벤트 연결
     document.querySelectorAll("[data-vote]").forEach((b) => b.onclick = async () => {
@@ -511,6 +694,104 @@
     };
   }
 
+  // ---------- 공지 ----------
+  async function viewNotices() {
+    setHeader("공지", "#/"); setFab("#/notice/new", "+ 새 공지");
+    $("app").innerHTML = `<div style="height:12px"></div>` + `<div class="skeleton"></div>`.repeat(3);
+    const { notices } = await api("/notices");
+    if (!notices.length) {
+      $("app").innerHTML = `<div class="empty"><b>📣</b>아직 공지가 없어요.<br>아래 <strong>+ 새 공지</strong>로 첫 소식을 남겨보세요.</div>`;
+      return;
+    }
+    // 고정 공지 먼저, 그다음 최신순
+    notices.sort((a, b) => (b.pinned - a.pinned) || b.createdAt.localeCompare(a.createdAt));
+    $("app").innerHTML = `<div style="height:8px"></div>` + notices.map((n) => `
+      <a class="card" href="#/notice/n/${n.id}">
+        <div class="card-top"><div class="card-title">${n.pinned ? "📌 " : ""}${esc(n.title)}</div></div>
+        ${n.body ? `<div class="snippet">${esc(n.body.replace(/\s+/g, " ").slice(0, 80))}</div>` : ""}
+        <div class="meta">${n.by ? `<span>${esc(n.by)}</span>` : ""}<span>${fmtWhen(n.createdAt)}</span>${n.photoCount ? `<span>📷 ${n.photoCount}</span>` : ""}</div>
+      </a>`).join("");
+  }
+
+  async function viewNotice(id) {
+    setHeader("공지", "#/notice"); setFab(false);
+    $("app").innerHTML = `<div style="height:12px"></div><div class="skeleton" style="height:160px"></div>`;
+    const { notice: n } = await api("/notices/" + id);
+    photoWidgets.delete(`n-${id}`);
+    const edited = n.updatedAt !== n.createdAt;
+    $("app").innerHTML = `
+      <div class="hero" style="margin-top:8px">
+        ${n.pinned ? `<span class="badge b-vote" style="display:inline-block;margin-bottom:8px">📌 고정 공지</span>` : ""}
+        <h2>${esc(n.title)}</h2>
+        <div class="meta">${n.by ? `${esc(n.by)} · ` : ""}${fmtWhen(n.createdAt)}${edited ? " · 수정됨" : ""}</div>
+        ${n.body ? `<div class="nbody">${linkify(n.body)}</div>` : ""}
+        <div class="row-actions">
+          <a href="#/notice/n/${n.id}/edit">수정</a>
+          <button id="pinBtn">${n.pinned ? "고정 해제" : "맨 위에 고정"}</button>
+          <button id="delBtn">삭제</button>
+        </div>
+      </div>
+      <div id="photoSlot"></div>`;
+    mountPhotos($("photoSlot"), `n-${n.id}`);
+    $("pinBtn").onclick = async () => {
+      await api(`/notices/${n.id}`, "PATCH", { pinned: !n.pinned }).catch((e) => toast(e.message));
+      viewNotice(n.id);
+    };
+    $("delBtn").onclick = async () => {
+      if (!confirm("이 공지와 사진이 모두 지워져요. 삭제할까요?")) return;
+      await api(`/notices/${n.id}`, "DELETE").catch((e) => toast(e.message));
+      location.replace("#/notice");
+    };
+  }
+
+  async function viewNoticeForm(id) {
+    setFab(false);
+    let n = null;
+    if (id) { setHeader("공지 수정", `#/notice/n/${id}`); n = (await api("/notices/" + id)).notice; }
+    else setHeader("새 공지", "#/notice");
+    const files = []; // 새 공지일 때 같이 올릴 사진 (저장 후 업로드)
+    $("app").innerHTML = `
+      <div style="height:8px"></div>
+      <label class="field"><span>제목</span><input type="text" id="nTitle" maxlength="100" placeholder="예: 12월 회비 안내" value="${esc(n?.title)}"></label>
+      <label class="field"><span>내용</span><textarea id="nBody" maxlength="5000" placeholder="알릴 내용을 적어주세요. 링크도 붙일 수 있어요.">${esc(n?.body)}</textarea></label>
+      <label class="check"><input type="checkbox" id="nPin" ${n?.pinned ? "checked" : ""}> 맨 위에 고정</label>
+      ${n ? `<p class="hint" style="margin-bottom:16px">사진은 공지 화면에서 추가·삭제할 수 있어요.</p>` : `
+      <div class="field"><span style="display:block;font-size:14px;font-weight:600;margin:0 2px 6px">사진</span>
+        <div class="pgrid" id="nPrev"></div>
+        <label class="btn btn-ghost padd">+ 사진 고르기<input type="file" id="nFiles" accept="image/*" multiple hidden></label>
+      </div>`}
+      <button class="btn btn-primary" id="nSave">${n ? "저장" : "올리기"}</button>`;
+
+    const drawPrev = () => {
+      $("nPrev").innerHTML = files.map((f, i) => `
+        <div class="pthumb"><img src="${f.url}" alt=""><button class="prm" data-rm="${i}" aria-label="빼기">✕</button></div>`).join("");
+      $("nPrev").querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => {
+        URL.revokeObjectURL(files[+b.dataset.rm].url); files.splice(+b.dataset.rm, 1); drawPrev();
+      });
+    };
+    if (!n) $("nFiles").onchange = (e) => {
+      for (const f of e.target.files) files.push({ file: f, url: URL.createObjectURL(f) });
+      e.target.value = ""; drawPrev();
+    };
+
+    $("nSave").onclick = async () => {
+      const title = $("nTitle").value.trim();
+      if (!title) return toast("제목을 입력해 주세요");
+      const btn = $("nSave"); btn.disabled = true;
+      const body = { title, body: $("nBody").value, pinned: $("nPin").checked };
+      try {
+        const r = n ? await api(`/notices/${n.id}`, "PATCH", body) : await api("/notices", "POST", { ...body, by: me });
+        let failed = 0;
+        for (let i = 0; i < files.length; i++) {
+          btn.textContent = `사진 올리는 중… ${i + 1}/${files.length}`;
+          try { await uploadPhoto(`n-${r.notice.id}`, files[i].file); } catch { failed++; }
+        }
+        if (failed) toast(`사진 ${failed}장은 올리지 못했어요`);
+        location.replace(`#/notice/n/${r.notice.id}`);
+      } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = n ? "저장" : "올리기"; }
+    };
+  }
+
   // ---------- 라우팅 ----------
   async function route(keepScroll) {
     if (!me) return askName();
@@ -525,6 +806,13 @@
         else if (s[0] === "e" && s[1]) await viewDetail(s[1]);
         else await viewList();
       }
+      else if (p[0] === "notice") {
+        const s = p.slice(1); // #/notice/...
+        if (s[0] === "new") await viewNoticeForm();
+        else if (s[0] === "n" && s[2] === "edit") await viewNoticeForm(s[1]);
+        else if (s[0] === "n" && s[1]) await viewNotice(s[1]);
+        else await viewNotices();
+      }
       // 예전 주소(#/e/ID)로 공유된 링크도 열리도록
       else if (p[0] === "e" && p[1]) location.replace(`#/schedule/e/${p[1]}`);
       else await viewHome();
@@ -537,6 +825,7 @@
   // 다른 앱 갔다 오면 최신 투표로 새로고침 (작성 중인 화면·저장 안 한 기록은 건드리지 않음)
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible" || !me || /new|edit/.test(location.hash)) return;
+    if (uploading || document.querySelector(".viewer")) return; // 사진 올리는 중·크게 보는 중엔 그대로
     const rec = $("record");
     if (rec && rec.value !== rec.defaultValue) return;
     route(true);
